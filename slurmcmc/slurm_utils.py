@@ -1,18 +1,91 @@
 import os, json, time
 import numpy as np
+import submitit
 from slurmpy import Slurm
 
+def add_to_history(x_history, x):
+    """
+    Add a new value to the history array
+    """
+    if len(x_history) == 0:
+        x_history = np.array(x).reshape(1, -1)
+    else:
+        x_history = np.vstack([x_history, np.array(x)])
+    return x_history
 
-class FunctionWrapper():
-    def __init__(self, function):
+class SlurmPool():
+    """
+    A class defined for the sole purpose of consistency with the pool.map syntax for parallelization in the emcee
+    package. Instead of using multiprocessing, we integrate with the submitit package to perform parallel calculations
+    on a cluster of multiple processors.
+
+    cluster: 'local' or 'slurm'
+    """
+    def __init__(self, work_dir, job_name='tmp', cluster='local', time_limit_minutes=60, slurm_partition='dev'):
         self.num_calls = 0
         self.points_history = []
         self.values_history = []
-        self.function = function
+        self.failed_points_history = []
+        self.work_dir = work_dir
+        self.job_name = job_name
+        self.cluster = cluster
+        self.executor = submitit.AutoExecutor(folder=work_dir, cluster=cluster)
+        self.executor.update_parameters(slurm_time=time_limit_minutes,
+                                        slurm_job_name=job_name,
+                                        slurm_partition=slurm_partition,
+                                        )
+        return
 
-    def __call__(self, x):
-        res = self.function(x)
+    def map(self, fun, points):
+        if self.cluster == 'local':
+            res = [fun(point) for point in points]
+        else:
+            res = self.send_and_receive_jobs(fun, points)
+
+        # update history arrays
         self.num_calls += 1
-        self.points_history += [x]
-        self.values_history += [res]
+        inds_failed = [i for i, r in enumerate(res) if r == None or np.isnan(r)]
+        inds_success = [i for i, r in enumerate(res) if i not in inds_failed]
+        failed_points = [np.array([p for i, p in enumerate(points) if i in inds_failed])]
+        success_points = [np.array([p for i, p in enumerate(points) if i in inds_success])]
+        success_values = [np.array([v for i, v in enumerate(res) if i in inds_success])]
+        if len(inds_failed) > 0:
+            self.failed_points_history = add_to_history(self.failed_points_history, failed_points)
+        if len(inds_success) > 0:
+            self.points_history = add_to_history(self.points_history, success_points)
+            self.values_history = add_to_history(self.values_history, success_values)
+
         return res
+
+    def send_and_receive_jobs(self, fun, points):
+        """
+        In case of a remote function evaluation, the function would be re-spawned in a new process
+        so there is no need to directly take it as an argument.
+        """
+
+        # prepare directories and input files for the jobs and send them
+        iteration_dir = self.work_dir + '/' + str(self.num_calls)
+        os.makedirs(iteration_dir, exist_ok=True)
+        point_dirs = []
+        for ind_point, point in enumerate(points):
+            point_dir = iteration_dir + '/' + str(ind_point)
+            point_dirs += [point_dir]
+            os.makedirs(point_dir, exist_ok=True)
+            np.savetxt('point.txt', point)
+
+        # send the jobs
+        jobs = []
+        for ind_point, (point, point_dir) in enumerate(zip(points, point_dirs)):
+            job_name = self.job_name + '_' + str(self.num_calls) + '_' + str(ind_point)
+            self.executor.update_parameters(folder=point_dir, slurm_job_name=job_name)
+            job = self.executor.submit(fun, *point.args, **point.kwargs)
+            jobs += [job]
+
+        # collect the results
+        outputs = [job.result() for job in jobs]
+
+        # save current iteration points and results
+        np.savetxt(iteration_dir + '/points.txt', np.array(points))
+        np.savetxt(iteration_dir + '/outputs.txt', np.array(outputs))
+
+        return outputs
