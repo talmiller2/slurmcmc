@@ -8,7 +8,7 @@ def add_to_history(x_history, x):
     Add a new value to the history array
     """
     if len(x_history) == 0:
-        x_history = np.array(x).reshape(1, -1)
+        x_history = np.array(x)
     else:
         x_history = np.vstack([x_history, np.array(x)])
     return x_history
@@ -19,25 +19,32 @@ class SlurmPool():
     package. Instead of using multiprocessing, we integrate with the submitit package to perform parallel calculations
     on a cluster of multiple processors.
 
-    cluster: 'local' or 'slurm'
+    cluster: 'slurm' or 'local' (run locally with submitit) or 'local-map' (run locally with map)
+
+    TODO: its possible to save progress in nevergrad and emcee, so no real need to save progress manually
+     test it with cases of NaNs etc and then kill this.
     """
-    def __init__(self, work_dir, job_name='tmp', cluster='local', time_limit_minutes=60, slurm_partition='dev'):
+    def __init__(self, work_dir, job_name='tmp', cluster='local', **job_params):
         self.num_calls = 0
         self.points_history = []
         self.values_history = []
         self.failed_points_history = []
         self.work_dir = work_dir
         self.job_name = job_name
+        self.job_params = job_params
         self.cluster = cluster
-        self.executor = submitit.AutoExecutor(folder=work_dir, cluster=cluster)
-        self.executor.update_parameters(slurm_time=time_limit_minutes,
-                                        slurm_job_name=job_name,
-                                        slurm_partition=slurm_partition,
-                                        )
+
+        # if cluster != 'local-map':
+        #     self.executor = submitit.AutoExecutor(folder=work_dir, cluster=cluster)
+        #     # self.executor.update_parameters(slurm_time=time_limit_minutes,
+        #     #                                 slurm_job_name=job_name,
+        #     #                                 slurm_partition=slurm_partition,
+        #     #                                 )
+        #     self.executor.update_parameters(**job_params)
         return
 
     def map(self, fun, points):
-        if self.cluster == 'local':
+        if self.cluster == 'local-map':
             res = [fun(point) for point in points]
         else:
             res = self.send_and_receive_jobs(fun, points)
@@ -46,11 +53,13 @@ class SlurmPool():
         self.num_calls += 1
         inds_failed = [i for i, r in enumerate(res) if r == None or np.isnan(r)]
         inds_success = [i for i, r in enumerate(res) if i not in inds_failed]
-        failed_points = [np.array([p for i, p in enumerate(points) if i in inds_failed])]
-        success_points = [np.array([p for i, p in enumerate(points) if i in inds_success])]
-        success_values = [np.array([v for i, v in enumerate(res) if i in inds_success])]
+        failed_points = np.array([p for i, p in enumerate(points) if i in inds_failed])
+        success_points = np.array([p for i, p in enumerate(points) if i in inds_success])
+        success_values = np.array([v for i, v in enumerate(res) if i in inds_success])
         if len(inds_failed) > 0:
             self.failed_points_history = add_to_history(self.failed_points_history, failed_points)
+        # print('success_points:', success_points)
+        # print('success_values:', success_values)
         if len(inds_success) > 0:
             self.points_history = add_to_history(self.points_history, success_points)
             self.values_history = add_to_history(self.values_history, success_values)
@@ -71,21 +80,28 @@ class SlurmPool():
             point_dir = iteration_dir + '/' + str(ind_point)
             point_dirs += [point_dir]
             os.makedirs(point_dir, exist_ok=True)
-            np.savetxt('point.txt', point)
+            # print('$$$$$$$$$', 'point:', point)
+            np.savetxt(point_dir + '/input.txt', [point])
 
         # send the jobs
         jobs = []
         for ind_point, (point, point_dir) in enumerate(zip(points, point_dirs)):
             job_name = self.job_name + '_' + str(self.num_calls) + '_' + str(ind_point)
-            self.executor.update_parameters(folder=point_dir, slurm_job_name=job_name)
-            job = self.executor.submit(fun, *point.args, **point.kwargs)
+            self.executor = submitit.AutoExecutor(folder=point_dir, cluster=self.cluster)
+            self.executor.update_parameters(slurm_job_name=job_name, **self.job_params)
+            job = self.executor.submit(fun, point)
             jobs += [job]
 
         # collect the results
-        outputs = [job.result() for job in jobs]
+        outputs = []
+        for ind_point, job in enumerate(jobs):
+            output = job.result()
+            point_dir = iteration_dir + '/' + str(ind_point)
+            np.savetxt(point_dir + '/output.txt', [output])
+            outputs += [output]
 
         # save current iteration points and results
-        np.savetxt(iteration_dir + '/points.txt', np.array(points))
+        np.savetxt(iteration_dir + '/inputs.txt', np.array(points))
         np.savetxt(iteration_dir + '/outputs.txt', np.array(outputs))
 
         return outputs
