@@ -9,13 +9,13 @@ class test_slurmpool_slurm(unittest.TestCase):
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
 
     def tearDown(self):
-        # if os.path.isdir(self.work_dir):
-        #     shutil.rmtree(self.work_dir)
+        if os.path.isdir(self.work_dir):
+            shutil.rmtree(self.work_dir)
         pass
 
     def test_slurmpool_slurm(self):
         self.slurmpool = SlurmPool(self.work_dir, job_name='test_slurmpool', cluster='slurm',
-                                   slurm_partition='testCore', slurm_time=10)
+                                   slurm_partition='testSocket', slurm_time=10)
         fun = lambda x: x ** 2
         points = [2, 3, 4]
         res_expected = [fun(point) for point in points]
