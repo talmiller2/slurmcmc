@@ -33,14 +33,6 @@ class SlurmPool():
         self.job_name = job_name
         self.job_params = job_params
         self.cluster = cluster
-
-        # if cluster != 'local-map':
-        #     self.executor = submitit.AutoExecutor(folder=work_dir, cluster=cluster)
-        #     # self.executor.update_parameters(slurm_time=time_limit_minutes,
-        #     #                                 slurm_job_name=job_name,
-        #     #                                 slurm_partition=slurm_partition,
-        #     #                                 )
-        #     self.executor.update_parameters(**job_params)
         return
 
     def map(self, fun, points):
