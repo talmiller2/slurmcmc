@@ -1,7 +1,6 @@
-import os, json, time
+import os
 import numpy as np
 import submitit
-from slurmpy import Slurm
 
 def add_to_history(x_history, x):
     """
