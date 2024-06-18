@@ -9,7 +9,10 @@ def add_to_history(x_history, x):
     if len(x_history) == 0:
         x_history = np.array(x)
     else:
-        x_history = np.vstack([x_history, np.array(x)])
+        if len(x_history.shape) == 1 and len(x.shape) == 1:
+            x_history = np.hstack([x_history, np.array(x)])
+        else:
+            x_history = np.vstack([x_history, np.array(x)])
     return x_history
 
 class SlurmPool():
@@ -23,11 +26,13 @@ class SlurmPool():
     TODO: its possible to save progress in nevergrad and emcee, so no real need to save progress manually
      test it with cases of NaNs etc and then kill this.
     """
-    def __init__(self, work_dir, job_name='tmp', cluster='local', **job_params):
+    def __init__(self, work_dir, job_name='tmp', cluster='slurm', **job_params):
         self.num_calls = 0
         self.points_history = []
         self.values_history = []
         self.failed_points_history = []
+        # self.evaluated_points = set()
+        # self.evaluated_values = set()
         self.work_dir = work_dir
         self.job_name = job_name
         self.job_params = job_params
@@ -35,6 +40,12 @@ class SlurmPool():
         return
 
     def map(self, fun, points):
+
+        # TODO: check if some points were previously calculated and use
+        # for point in points:
+        #     candidate_tuple = tuple(candidate.value[0][0])
+        #     if candidate_tuple not in evaluated_points:
+
         if self.cluster == 'local-map':
             res = [fun(point) for point in points]
         else:
