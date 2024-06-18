@@ -31,8 +31,6 @@ class SlurmPool():
         self.points_history = []
         self.values_history = []
         self.failed_points_history = []
-        # self.evaluated_points = set()
-        # self.evaluated_values = set()
         self.work_dir = work_dir
         self.job_name = job_name
         self.job_params = job_params
@@ -40,12 +38,6 @@ class SlurmPool():
         return
 
     def map(self, fun, points):
-
-        # TODO: check if some points were previously calculated and use
-        # for point in points:
-        #     candidate_tuple = tuple(candidate.value[0][0])
-        #     if candidate_tuple not in evaluated_points:
-
         if self.cluster == 'local-map':
             res = [fun(point) for point in points]
         else:
