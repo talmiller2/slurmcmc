@@ -11,14 +11,18 @@ def log_prob_fun(x):
 
 
 class test_slurm_mcmc(unittest.TestCase):
+    def setUp(self):
+        self.verbosity = 0
 
     def test_slurm_mcmc(self):
         num_params = 2
         num_walkers = 4
-        num_iters = 100
+        num_iters = 5
         minima = np.array([1, 1])
         p0 = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
-        sampler, slurm_pool = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters, cluster='local-map', progress=False)
+        sampler, slurm_pool = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
+                                         verbosity=self.verbosity, slurm_vebosity=self.verbosity,
+                                         cluster='local-map', progress=False)
         samples = sampler.get_chain(flat=True)
         samples = np.vstack([p0, samples]) # p0 is not inherently included
         num_calculated_points = num_walkers * (num_iters + 1)
