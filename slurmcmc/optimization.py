@@ -4,7 +4,7 @@ from slurmcmc.slurm_utils import SlurmPool
 
 
 def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, num_iters=10,
-                   init_points=None, constraint_fun=None, verbosity=1, num_asks_max=int(1e3),
+                   init_points=None, constraint_fun=None, verbosity=1, slurm_vebosity=0, num_asks_max=int(1e3),
                    work_dir='tmp', job_name='minimize', cluster='local', **job_params):
     """
     combine submitit + nevergrad to allow parallel optimization on slurm.
@@ -24,7 +24,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
     budget = num_iters * num_workers
     optimizer = optimizer_class(parametrization=instrum, budget=budget, num_workers=num_workers)
 
-    slurm_pool = SlurmPool(work_dir, job_name, cluster, **job_params)
+    slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, **job_params)
 
     num_loss_fun_calls_total = 0
     num_constraint_fun_calls_total = 0

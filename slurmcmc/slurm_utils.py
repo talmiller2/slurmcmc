@@ -22,11 +22,8 @@ class SlurmPool():
     on a cluster of multiple processors.
 
     cluster: 'slurm' or 'local' (run locally with submitit) or 'local-map' (run locally with map)
-
-    TODO: its possible to save progress in nevergrad and emcee, so no real need to save progress manually
-     test it with cases of NaNs etc and then kill this.
     """
-    def __init__(self, work_dir, job_name='tmp', cluster='slurm', **job_params):
+    def __init__(self, work_dir, job_name='tmp', cluster='slurm', verbosity=1, **job_params):
         self.num_calls = 0
         self.points_history = []
         self.values_history = []
@@ -35,9 +32,13 @@ class SlurmPool():
         self.job_name = job_name
         self.job_params = job_params
         self.cluster = cluster
+        self.verbosity = verbosity
         return
 
     def map(self, fun, points):
+        if self.verbosity >= 1:
+            print('slurm_pool.map() called with ' + str(len(points)) + ' points.')
+
         if self.cluster == 'local-map':
             res = [fun(point) for point in points]
         else:
@@ -52,8 +53,6 @@ class SlurmPool():
         success_values = np.array([v for i, v in enumerate(res) if i in inds_success])
         if len(inds_failed) > 0:
             self.failed_points_history = add_to_history(self.failed_points_history, failed_points)
-        # print('success_points:', success_points)
-        # print('success_values:', success_values)
         if len(inds_success) > 0:
             self.points_history = add_to_history(self.points_history, success_points)
             self.values_history = add_to_history(self.values_history, success_values)
@@ -74,7 +73,6 @@ class SlurmPool():
             point_dir = iteration_dir + '/' + str(ind_point)
             point_dirs += [point_dir]
             os.makedirs(point_dir, exist_ok=True)
-            # print('$$$$$$$$$', 'point:', point)
             np.savetxt(point_dir + '/input.txt', [point])
 
         # send the jobs
