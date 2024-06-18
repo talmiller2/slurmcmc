@@ -4,7 +4,7 @@ import numpy as np
 from slurmcmc.slurm_utils import SlurmPool
 
 def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=True, verbosity=1, slurm_vebosity=0,
-               work_dir='tmp', job_name='minimize', cluster='local', slurm_dict={}, **emcee_kwargs):
+               work_dir='tmp', job_name='minimize', cluster='slurm', slurm_dict={}, **emcee_kwargs):
     """
     combine submitit + emcee to allow ensemble mcmc on slurm.
     the number of parallelizable evaluations in the default emcee "move" is len(init_points)/2,

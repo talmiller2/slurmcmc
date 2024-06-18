@@ -5,9 +5,11 @@ from slurmcmc.slurm_utils import SlurmPool
 
 def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, num_iters=10,
                    init_points=None, constraint_fun=None, verbosity=1, slurm_vebosity=0, num_asks_max=int(1e3),
-                   work_dir='tmp', job_name='minimize', cluster='local', **job_params):
+                   work_dir='tmp', job_name='minimize', cluster='slurm', **job_params):
     """
     combine submitit + nevergrad to allow parallel optimization on slurm.
+    has capability to keep drawing points from optimizer.ask() until num_workers points are found that were not
+    already calculated previously, and that pass constraint_fun.
     """
 
     # param_bounds is a list (length num_params) that contains the lower and upper bounds per parameter
@@ -55,7 +57,6 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         else:
             candidates = []
             num_asks = 0
-            num_constraint_fun_calls_curr = 0
             while len(candidates) < num_workers:
                 candidate = optimizer.ask()
                 num_asks += 1
@@ -65,8 +66,8 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
                 if candidate_tuple not in evaluated_points:
                     if constraint_fun is not None:
                         constraint_passed = constraint_fun(*candidate.args, **candidate.kwargs) <= 0
-                        num_constraint_fun_calls_curr += 1
                         num_constraint_fun_calls_total += 1
+
                     if constraint_fun is not None and not constraint_passed:
                         pass
                     else:
