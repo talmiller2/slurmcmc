@@ -1,6 +1,24 @@
+import pickle
+
 import nevergrad as ng
 
 from slurmcmc.slurm_utils import SlurmPool
+
+
+# # Define the checkpoint path
+# checkpoint_path = "optimizer_checkpoint.pkl"
+#
+#
+# # Function to save the optimizer state
+# def save_checkpoint(optimizer, path):
+#     with open(path, 'wb') as f:
+#         pickle.dump(optimizer, f)
+#
+#
+# # Function to load the optimizer state
+# def load_checkpoint(path):
+#     with open(path, 'rb') as f:
+#         return pickle.load(f)
 
 
 def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, num_iters=10,
@@ -10,6 +28,10 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
     combine submitit + nevergrad to allow parallel optimization on slurm.
     has capability to keep drawing points from optimizer.ask() until num_workers points are found that were not
     already calculated previously, and that pass constraint_fun.
+
+    # TODO: allow to restart from file: rquires to save both the optimizer and the slurm_pool
+
+    # TODO: print to log_file
     """
 
     # param_bounds is a list (length num_params) that contains the lower and upper bounds per parameter
@@ -33,7 +55,6 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
     num_asks_total = 0
     evaluated_points = set()
 
-    # TODO: allow to restart from file
 
     ## start optimization iterations
     for curr_iter in range(num_iters):
@@ -89,6 +110,8 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
             x_min = optimizer.current_bests['minimum'].parameter.value[0][0]
             loss_min = optimizer.current_bests['minimum'].mean
             print('    curr best: x_min:', x_min, ', loss_min:', loss_min)
+
+        # TODO: save progress after iteration done, to allow restarting
 
     x_min = optimizer.current_bests['minimum'].parameter.value[0][0]
     loss_min = optimizer.current_bests['minimum'].mean

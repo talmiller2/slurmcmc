@@ -12,7 +12,7 @@ def log_prob_fun(x):
 
 class test_slurm_mcmc(unittest.TestCase):
     def setUp(self):
-        self.verbosity = 0
+        self.verbosity = 1
 
     def test_slurm_mcmc(self):
         num_params = 2
