@@ -14,12 +14,12 @@ class test_slurmpool_slurm(unittest.TestCase):
         pass
 
     def test_slurmpool_slurm(self):
-        self.slurmpool = SlurmPool(self.work_dir, job_name='test_slurmpool', cluster='slurm',
-                                   slurm_partition='testSocket', slurm_time=10)
+        slurm_pool = SlurmPool(self.work_dir, job_name='test_slurmpool', cluster='slurm',
+                               slurm_partition='testSocket', slurm_time=10)
         fun = lambda x: x ** 2
         points = [2, 3, 4]
         res_expected = [fun(point) for point in points]
-        res = self.slurmpool.map(fun, points)
+        res = slurm_pool.map(fun, points)
         self.assertEqual(res, res_expected)
 
 if __name__ == '__main__':

@@ -9,9 +9,6 @@ class SlurmPool():
     on a cluster of multiple processors.
 
     cluster: 'slurm' or 'local' (run locally with submitit) or 'local-map' (run locally with map)
-
-    # TODO: catch error if attempting to run in a dir that already exists, to avoid overwriting runs
-       unless continuing from restart
     """
     def __init__(self, work_dir, job_name='tmp', cluster='slurm', budget=int(1e6), verbosity=1, log_file=None,
                  **job_params):
@@ -26,6 +23,10 @@ class SlurmPool():
         self.verbosity = verbosity
         self.budget = budget
         self.log_file = log_file
+
+        if cluster in ['local', 'slurm'] and os.path.isdir(work_dir + '/0'):
+            raise ValueError('work_dir ' + work_dir + ' appears to already contain runs, move or delete it first.')
+
         return
 
     def map(self, fun, points):

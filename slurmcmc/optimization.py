@@ -112,15 +112,12 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         status['optimizer'] = optimizer
         status['x_min'] = x_min
         status['loss_min'] = loss_min
-        # history = [(point, info.mean) for point, info in optimizer.archive.items_as_arrays()]
-        # result_dict['history'] = history
         status['slurm_pool'] = slurm_pool
         status['num_loss_fun_calls_total'] = num_loss_fun_calls_total
         status['num_constraint_fun_calls_total'] = num_constraint_fun_calls_total
         status['num_asks_total'] = num_asks_total
         status['evaluated_points'] = evaluated_points
 
-        # TODO: save progress after iteration done, to allow restarting
         if save_checkpoint:
             save_checkpoint_fun(status, work_dir, checkpoint_file)
 
@@ -128,7 +125,6 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
     loss_min = optimizer.current_bests['minimum'].mean
     if verbosity >= 1:
         print('### opt loop done. x_min:', x_min, ', loss_min:', loss_min)
-
 
     return status
 
