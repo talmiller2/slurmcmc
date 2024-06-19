@@ -12,7 +12,13 @@ def log_prob_fun(x):
 
 class test_slurm_mcmc(unittest.TestCase):
     def setUp(self):
+        self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
         self.verbosity = 1
+
+    def tearDown(self):
+        if os.path.isdir(self.work_dir):
+            shutil.rmtree(self.work_dir)
+        pass
 
     def test_slurm_mcmc(self):
         num_params = 2

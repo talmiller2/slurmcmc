@@ -1,64 +1,60 @@
-import pickle
+import os, pickle
 
 import nevergrad as ng
 
 from slurmcmc.slurm_utils import SlurmPool
 
 
-# # Define the checkpoint path
-# checkpoint_path = "optimizer_checkpoint.pkl"
-#
-#
-# # Function to save the optimizer state
-# def save_checkpoint(optimizer, path):
-#     with open(path, 'wb') as f:
-#         pickle.dump(optimizer, f)
-#
-#
-# # Function to load the optimizer state
-# def load_checkpoint(path):
-#     with open(path, 'rb') as f:
-#         return pickle.load(f)
-
 
 def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, num_iters=10,
-                   init_points=None, constraint_fun=None, verbosity=1, slurm_vebosity=0, num_asks_max=int(1e3),
-                   work_dir='tmp', job_name='minimize', cluster='slurm', **job_params):
+                   init_points=None, constraint_fun=None, num_asks_max=int(1e3),
+                   verbosity=1, slurm_vebosity=0,
+                   save_checkpoint=False, load_checkpoint=False, checkpoint_file='checkpoint.pkl',
+                   work_dir='tmp', job_name='minimize', cluster='slurm', slurm_dict={}):
     """
     combine submitit + nevergrad to allow parallel optimization on slurm.
     has capability to keep drawing points from optimizer.ask() until num_workers points are found that were not
     already calculated previously, and that pass constraint_fun.
 
-    # TODO: allow to restart from file: rquires to save both the optimizer and the slurm_pool
-
     # TODO: print to log_file
     """
 
-    # param_bounds is a list (length num_params) that contains the lower and upper bounds per parameter
-    lower_bounds = [b[0] for b in param_bounds]
-    upper_bounds = [b[1] for b in param_bounds]
-    num_params = len(lower_bounds)
-    instrum = ng.p.Instrumentation(ng.p.Array(shape=(num_params,))
-                                   .set_bounds(lower=lower_bounds, upper=upper_bounds))
+    if load_checkpoint:
+        if verbosity >= 1:
+            print('loading checkpoint file.')
+            status = load_checkpoint_fun(work_dir, checkpoint_file)
+            optimizer = status['optimizer']
+            slurm_pool = status['slurm_pool']
+            num_loss_fun_calls_total = status['num_loss_fun_calls_total']
+            num_constraint_fun_calls_total = status['num_constraint_fun_calls_total']
+            num_asks_total = status['num_asks_total']
+            evaluated_points = status['evaluated_points']
 
-    if optimizer_class is None:
-        optimizer_class = ng.optimizers.DifferentialEvolution(crossover="twopoints", popsize=num_workers)
-        # optimizer_class = ng.optimizers.ConfPSO(popsize=num_workers)
+    else:
+        # param_bounds is a list (length num_params) that contains the lower and upper bounds per parameter
+        lower_bounds = [b[0] for b in param_bounds]
+        upper_bounds = [b[1] for b in param_bounds]
+        num_params = len(lower_bounds)
+        instrum = ng.p.Instrumentation(ng.p.Array(shape=(num_params,))
+                                       .set_bounds(lower=lower_bounds, upper=upper_bounds))
 
-    budget = num_iters * num_workers
-    optimizer = optimizer_class(parametrization=instrum, budget=budget, num_workers=num_workers)
+        if optimizer_class is None:
+            optimizer_class = ng.optimizers.DifferentialEvolution(crossover="twopoints", popsize=num_workers)
+            # optimizer_class = ng.optimizers.ConfPSO(popsize=num_workers)
 
-    slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, **job_params)
+        budget = num_iters * num_workers
+        optimizer = optimizer_class(parametrization=instrum, budget=budget, num_workers=num_workers)
 
-    num_loss_fun_calls_total = 0
-    num_constraint_fun_calls_total = 0
-    num_asks_total = 0
-    evaluated_points = set()
+        slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, **slurm_dict)
 
+        num_loss_fun_calls_total = 0
+        num_constraint_fun_calls_total = 0
+        num_asks_total = 0
+        evaluated_points = set()
 
     ## start optimization iterations
     for curr_iter in range(num_iters):
-        if verbosity >= 1:
+        if verbosity >= 2:
             print('### curr opt iter:', curr_iter)
 
         if curr_iter == 0 and init_points is not None:
@@ -106,29 +102,43 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         for candidate, result in zip(candidates, results):
             optimizer.tell(candidate, result)
 
+        x_min = optimizer.current_bests['minimum'].parameter.value[0][0]
+        loss_min = optimizer.current_bests['minimum'].mean
         if verbosity >= 2:
-            x_min = optimizer.current_bests['minimum'].parameter.value[0][0]
-            loss_min = optimizer.current_bests['minimum'].mean
             print('    curr best: x_min:', x_min, ', loss_min:', loss_min)
 
+        # optimization status
+        status = {}
+        status['optimizer'] = optimizer
+        status['x_min'] = x_min
+        status['loss_min'] = loss_min
+        # history = [(point, info.mean) for point, info in optimizer.archive.items_as_arrays()]
+        # result_dict['history'] = history
+        status['slurm_pool'] = slurm_pool
+        status['num_loss_fun_calls_total'] = num_loss_fun_calls_total
+        status['num_constraint_fun_calls_total'] = num_constraint_fun_calls_total
+        status['num_asks_total'] = num_asks_total
+        status['evaluated_points'] = evaluated_points
+
         # TODO: save progress after iteration done, to allow restarting
+        if save_checkpoint:
+            save_checkpoint_fun(status, work_dir, checkpoint_file)
 
     x_min = optimizer.current_bests['minimum'].parameter.value[0][0]
     loss_min = optimizer.current_bests['minimum'].mean
     if verbosity >= 1:
         print('### opt loop done. x_min:', x_min, ', loss_min:', loss_min)
 
-    history = [(point, info.mean) for point, info in optimizer.archive.items_as_arrays()]
 
-    # return optimization results
-    result_dict = {}
-    result_dict['x_min'] = x_min
-    result_dict['loss_min'] = loss_min
-    result_dict['history'] = history
-    result_dict['slurm_pool'] = slurm_pool
-    result_dict['num_loss_fun_calls_total'] = num_loss_fun_calls_total
-    result_dict['num_constraint_fun_calls_total'] = num_constraint_fun_calls_total
-    result_dict['num_asks_total'] = num_asks_total
-    result_dict['evaluated_points'] = evaluated_points
+    return status
 
-    return result_dict
+
+def save_checkpoint_fun(status, work_dir, checkpoint_file):
+    os.makedirs(work_dir, exist_ok=True)
+    with open(work_dir + '/' +  checkpoint_file, 'wb') as f:
+        pickle.dump(status, f)
+
+def load_checkpoint_fun(work_dir, checkpoint_file):
+    with open(work_dir + '/' +  checkpoint_file, 'rb') as f:
+        status = pickle.load(f)
+    return status

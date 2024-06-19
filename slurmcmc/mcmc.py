@@ -10,7 +10,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=True, verbosity
     the number of parallelizable evaluations in the default emcee "move" is len(init_points)/2,
     except the first one on the init_points which is len(init_points).
 
-    # TODO:starting for restart is possible using backend, but need to also save slurmpool to keep track
+    # TODO: starting for restart is possible using backend, but need to also save slurmpool to keep track
        on the runs structure. or maybe it already just works, anyway needs testing.
 
     # TODO: print to log_file
