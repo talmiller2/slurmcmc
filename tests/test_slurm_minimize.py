@@ -1,5 +1,7 @@
+import os
+import shutil
 import unittest
-import os, shutil
+
 import numpy as np
 from scipy.optimize import rosen
 
@@ -63,7 +65,6 @@ class test_slurm_minimize(unittest.TestCase):
         self.assertLessEqual(np.linalg.norm(result['x_min'] - self.expected_minima_point), 0.3)
         self.assertLessEqual(result['loss_min'], 0.05)
 
-
     def test_slurm_minimize_3params(self):
         np.random.seed(0)
         self.num_params = 3
@@ -79,7 +80,6 @@ class test_slurm_minimize(unittest.TestCase):
 
         self.assertLessEqual(np.linalg.norm(result['x_min'] - self.expected_minima_point), 0.7)
         self.assertLessEqual(result['loss_min'], 0.1)
-
 
     def test_slurm_minimize_2params_with_constraint(self):
         np.random.seed(0)
@@ -136,19 +136,19 @@ class test_slurm_minimize(unittest.TestCase):
 
         # run and save checkpoint
         res_1 = slurm_minimize(loss_fun=loss_fun,
-                                 param_bounds=self.param_bounds, num_workers=self.num_workers, num_iters=self.num_iters,
-                                 cluster='local-map', verbosity=self.verbosity,
-                                 save_checkpoint=True, load_checkpoint=False,
-                                 )
+                               param_bounds=self.param_bounds, num_workers=self.num_workers, num_iters=self.num_iters,
+                               cluster='local-map', verbosity=self.verbosity,
+                               work_dir=self.work_dir, save_checkpoint=True, load_checkpoint=False,
+                               )
         self.assertEqual(res_1['slurm_pool'].num_calls, self.num_iters)
         self.assertEqual(len(res_1['slurm_pool'].points_history), self.num_iters * self.num_workers)
 
         # run again from previous checkpoint
         res_2 = slurm_minimize(loss_fun=loss_fun,
-                                 param_bounds=self.param_bounds, num_workers=self.num_workers, num_iters=self.num_iters,
-                                 cluster='local-map', verbosity=self.verbosity,
-                                 save_checkpoint=True, load_checkpoint=True,
-                                 )
+                               param_bounds=self.param_bounds, num_workers=self.num_workers, num_iters=self.num_iters,
+                               cluster='local-map', verbosity=self.verbosity,
+                               work_dir=self.work_dir, save_checkpoint=True, load_checkpoint=True,
+                               )
         self.assertEqual(res_2['slurm_pool'].num_calls, 2 * self.num_iters)
         self.assertEqual(len(res_2['slurm_pool'].points_history), 2 * self.num_iters * self.num_workers)
 
