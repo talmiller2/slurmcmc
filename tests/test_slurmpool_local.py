@@ -1,4 +1,5 @@
-import os, shutil
+import os
+import shutil
 import unittest
 
 import numpy as np
@@ -23,6 +24,7 @@ class test_slurmpool_local(unittest.TestCase):
         res_expected = [fun(point) for point in points]
         res = self.slurmpool.map(fun, points)
         self.assertEqual(res, res_expected)
+        self.assertEqual(self.slurmpool.num_calls, 1)
 
     def test_slurmpool_localmap_history(self):
         self.slurmpool = SlurmPool(self.work_dir, cluster='local-map', verbosity=self.verbosity)
@@ -58,7 +60,6 @@ class test_slurmpool_local(unittest.TestCase):
         res = self.slurmpool.map(fun, points)
         self.assertEqual(res, res_expected)
 
-
     def test_slurmpool_localmap_history_2params(self):
         self.slurmpool = SlurmPool(self.work_dir, cluster='local-map', verbosity=self.verbosity)
         fun = lambda x: x[0] ** 2 + x[1] ** 2
@@ -71,6 +72,15 @@ class test_slurmpool_local(unittest.TestCase):
         np.testing.assert_array_equal(self.slurmpool.points_history, points_history_expected)
         np.testing.assert_array_equal(self.slurmpool.values_history, values_history_expected)
 
+    def test_slurmpool_localmap_with_budget(self):
+        self.slurmpool = SlurmPool(self.work_dir, cluster='local-map', verbosity=self.verbosity, budget=2)
+        fun = lambda x: x ** 2
+        points = [2, 3, 4, 5, 6]
+        res_expected = [fun(point) for point in points]
+        res = self.slurmpool.map(fun, points)
+        self.assertEqual(res, res_expected)
+        self.assertEqual(self.slurmpool.num_calls, 3)
+
     def test_slurmpool_local(self):
         self.slurmpool = SlurmPool(self.work_dir, cluster='local', verbosity=self.verbosity)
         fun = lambda x: x ** 2
@@ -78,17 +88,6 @@ class test_slurmpool_local(unittest.TestCase):
         res_expected = [fun(point) for point in points]
         res = self.slurmpool.map(fun, points)
         self.assertEqual(res, res_expected)
-        self.assertEqual(self.slurmpool.num_calls,1)
-
-
-    def test_slurmpool_local_with_budget(self):
-        self.slurmpool = SlurmPool(self.work_dir, cluster='local', verbosity=self.verbosity, budget=2)
-        fun = lambda x: x ** 2
-        points = [2, 3, 4, 5, 6]
-        res_expected = [fun(point) for point in points]
-        res = self.slurmpool.map(fun, points)
-        self.assertEqual(res, res_expected)
-        self.assertEqual(self.slurmpool.num_calls, 3)
 
     def test_slurmpool_local_2params(self):
         self.slurmpool = SlurmPool(self.work_dir, cluster='local', verbosity=self.verbosity)

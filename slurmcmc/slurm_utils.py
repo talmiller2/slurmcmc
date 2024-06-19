@@ -12,6 +12,8 @@ class SlurmPool():
 
     TODO: print to log_file
 
+    # TODO: catch error if attempting to run in a dir that already exists, to avoid overwriting runs
+       unless continuing from restart
     """
     def __init__(self, work_dir, job_name='tmp', cluster='slurm', budget=int(1e6), verbosity=1, **job_params):
         self.num_calls = 0
