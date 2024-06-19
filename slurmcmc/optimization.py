@@ -1,7 +1,7 @@
-import os, pickle
+import os
+import pickle
 
 import nevergrad as ng
-
 from slurmcmc.slurm_utils import SlurmPool, print_log
 
 
@@ -130,10 +130,11 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
 
 def save_checkpoint_fun(status, work_dir, checkpoint_file):
     os.makedirs(work_dir, exist_ok=True)
-    with open(work_dir + '/' +  checkpoint_file, 'wb') as f:
+    with open(work_dir + '/' + checkpoint_file, 'wb') as f:
         pickle.dump(status, f)
 
+
 def load_checkpoint_fun(work_dir, checkpoint_file):
-    with open(work_dir + '/' +  checkpoint_file, 'rb') as f:
+    with open(work_dir + '/' + checkpoint_file, 'rb') as f:
         status = pickle.load(f)
     return status

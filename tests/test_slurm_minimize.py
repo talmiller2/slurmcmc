@@ -27,6 +27,7 @@ def constraint_fun(x, r_constraint=3, x0_constraint=-1, y0_constraint=-1):
 class test_slurm_minimize(unittest.TestCase):
 
     def setUp(self):
+        np.random.seed(0)
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
         self.verbosity = 1
 
@@ -36,7 +37,6 @@ class test_slurm_minimize(unittest.TestCase):
         pass
 
     def test_slurm_minimize_1param(self):
-        np.random.seed(0)
         self.num_params = 1
         self.param_bounds = [[-5, 5] for _ in range(self.num_params)]
         self.expected_minima_point = np.ones(self.num_params)
@@ -51,7 +51,6 @@ class test_slurm_minimize(unittest.TestCase):
         self.assertLessEqual(result['loss_min'], 1e-3)
 
     def test_slurm_minimize_2params(self):
-        np.random.seed(0)
         self.num_params = 2
         self.param_bounds = [[-5, 5] for _ in range(self.num_params)]
         self.expected_minima_point = np.ones(self.num_params)
@@ -66,7 +65,6 @@ class test_slurm_minimize(unittest.TestCase):
         self.assertLessEqual(result['loss_min'], 0.05)
 
     def test_slurm_minimize_3params(self):
-        np.random.seed(0)
         self.num_params = 3
         self.param_bounds = [[-5, 5] for _ in range(self.num_params)]
         self.expected_minima_point = np.ones(self.num_params)
@@ -82,7 +80,6 @@ class test_slurm_minimize(unittest.TestCase):
         self.assertLessEqual(result['loss_min'], 0.1)
 
     def test_slurm_minimize_2params_with_constraint(self):
-        np.random.seed(0)
         self.num_params = 2
         self.param_bounds = [[-5, 5] for _ in range(self.num_params)]
         self.expected_minima_point = np.ones(self.num_params)
@@ -97,7 +94,6 @@ class test_slurm_minimize(unittest.TestCase):
         self.assertLessEqual(result['loss_min'], 0.05)
 
     def test_slurm_minimize_2params_with_constraint_from_init_points(self):
-        np.random.seed(0)
         self.num_params = 2
         self.param_bounds = [[-5, 5] for _ in range(self.num_params)]
         self.expected_minima_point = np.ones(self.num_params)
@@ -113,7 +109,6 @@ class test_slurm_minimize(unittest.TestCase):
         self.assertLessEqual(result['loss_min'], 0.05)
 
     def test_slurm_minimize_2params_with_constraint_from_illegal_init_points(self):
-        np.random.seed(0)
         self.num_params = 2
         self.param_bounds = [[-5, 5] for _ in range(self.num_params)]
         self.expected_minima_point = np.ones(self.num_params)
@@ -127,7 +122,6 @@ class test_slurm_minimize(unittest.TestCase):
                            cluster='local-map', verbosity=self.verbosity)
 
     def test_slurm_minimize_2params_with_checkpoint(self):
-        np.random.seed(0)
         self.num_params = 2
         self.param_bounds = [[-5, 5] for _ in range(self.num_params)]
         self.expected_minima_point = np.ones(self.num_params)
@@ -153,8 +147,7 @@ class test_slurm_minimize(unittest.TestCase):
         self.assertEqual(len(res_2['slurm_pool'].points_history), 2 * self.num_iters * self.num_workers)
 
 
-    def test_slurm_minimize_2params_local_with_log_file(self):
-        np.random.seed(0)
+    def test_slurm_minimize_2params_with_log_file(self):
         self.num_params = 2
         self.param_bounds = [[-5, 5] for _ in range(self.num_params)]
         self.expected_minima_point = np.ones(self.num_params)
@@ -163,9 +156,11 @@ class test_slurm_minimize(unittest.TestCase):
 
         result = slurm_minimize(loss_fun=loss_fun,
                                 param_bounds=self.param_bounds, num_workers=self.num_workers, num_iters=self.num_iters,
-                                cluster='local',
-                                verbosity=3, slurm_vebosity=3,
+                                cluster='local-map',
+                                verbosity=self.verbosity, slurm_vebosity=self.verbosity,
                                 work_dir=self.work_dir, log_file='log_file.txt')
+
+        self.assertTrue(os.path.isfile(self.work_dir + '/log_file.txt'), 'log_file was not created.')
 
 if __name__ == '__main__':
     unittest.main()
