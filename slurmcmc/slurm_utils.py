@@ -2,6 +2,7 @@ import os
 import numpy as np
 import submitit
 
+
 class SlurmPool():
     """
     A class defined for the sole purpose of consistency with the pool.map syntax for parallelization in the emcee
@@ -25,7 +26,9 @@ class SlurmPool():
         self.log_file = log_file
 
         if cluster in ['local', 'slurm'] and os.path.isdir(work_dir + '/0'):
-            raise ValueError('work_dir ' + work_dir + ' appears to already contain runs, move or delete it first.')
+            error_msg = 'work_dir appears to already contain runs, move or delete it first.'
+            error_msg += '\n' + 'work_dir:' + work_dir
+            raise ValueError(error_msg)
 
         return
 
@@ -34,8 +37,8 @@ class SlurmPool():
         chunks = self.split_points(points, self.budget)
         chunk_sizes = [len(chunk) for chunk in chunks]
         if self.verbosity >= 1 and len(chunks) > 1:
-            print('split points into ' + str(len(chunks)) + ' chunks of sizes ' + str(chunk_sizes) + '.',
-                  file=self.log_file)
+            print_log('split points into ' + str(len(chunks)) + ' chunks of sizes ' + str(chunk_sizes) + '.',
+                      self.work_dir, self.log_file)
 
         res = []
         for chunk in chunks:
@@ -54,7 +57,7 @@ class SlurmPool():
 
     def map_chunk(self, fun, points):
         if self.verbosity >= 1:
-            print('slurm_pool.map() called with ' + str(len(points)) + ' points.', file=self.log_file)
+            print_log('slurm_pool.map called with ' + str(len(points)) + ' points.', self.work_dir, self.log_file)
 
         if self.cluster == 'local-map':
             res = [fun(point) for point in points]
@@ -136,3 +139,11 @@ class SlurmPool():
         np.savetxt(iteration_dir + '/outputs.txt', np.array(outputs))
 
         return outputs
+
+def print_log(string, work_dir, log_file):
+    if log_file is None:
+        print(string)
+    else:
+        os.makedirs(work_dir, exist_ok=True)
+        with open(work_dir + '/' + log_file, 'a') as log_file:
+            print(string, file=log_file)

@@ -2,26 +2,24 @@ import os, pickle
 
 import nevergrad as ng
 
-from slurmcmc.slurm_utils import SlurmPool
-
+from slurmcmc.slurm_utils import SlurmPool, print_log
 
 
 def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, num_iters=10,
                    init_points=None, constraint_fun=None, num_asks_max=int(1e3),
-                   verbosity=1, slurm_vebosity=0,
+                   verbosity=1, slurm_vebosity=0, log_file=None,
                    save_checkpoint=False, load_checkpoint=False, checkpoint_file='checkpoint.pkl',
                    work_dir='tmp', job_name='minimize', cluster='slurm', slurm_dict={}):
     """
     combine submitit + nevergrad to allow parallel optimization on slurm.
     has capability to keep drawing points from optimizer.ask() until num_workers points are found that were not
     already calculated previously, and that pass constraint_fun.
-
-    # TODO: print to log_file
     """
 
     if load_checkpoint:
         if verbosity >= 1:
-            print('loading checkpoint file.')
+            print_log('loading checkpoint file.', work_dir, log_file)
+
             status = load_checkpoint_fun(work_dir, checkpoint_file)
             optimizer = status['optimizer']
             slurm_pool = status['slurm_pool']
@@ -45,7 +43,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         budget = num_iters * num_workers
         optimizer = optimizer_class(parametrization=instrum, budget=budget, num_workers=num_workers)
 
-        slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, **slurm_dict)
+        slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, log_file=log_file, **slurm_dict)
 
         num_loss_fun_calls_total = 0
         num_constraint_fun_calls_total = 0
@@ -55,7 +53,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
     ## start optimization iterations
     for curr_iter in range(num_iters):
         if verbosity >= 2:
-            print('### curr opt iter:', curr_iter)
+            print_log('### curr opt iter:' + str(curr_iter), work_dir, log_file)
 
         if curr_iter == 0 and init_points is not None:
             candidates = []
@@ -92,7 +90,8 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
                         candidates += [candidate]
 
             if verbosity >= 3:
-                print('    optimizer.ask() was called:', num_asks, 'times')
+                print_log('optimizer.ask was called ' + str(num_asks) + ' times', work_dir, log_file)
+
             num_asks_total += num_asks
 
         points = [c.value[0][0] for c in candidates]
@@ -105,7 +104,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         x_min = optimizer.current_bests['minimum'].parameter.value[0][0]
         loss_min = optimizer.current_bests['minimum'].mean
         if verbosity >= 2:
-            print('    curr best: x_min:', x_min, ', loss_min:', loss_min)
+            print_log('curr best: x_min: ' + str(x_min) + ', loss_min: ' + str(loss_min), work_dir, log_file)
 
         # optimization status
         status = {}
@@ -124,7 +123,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
     x_min = optimizer.current_bests['minimum'].parameter.value[0][0]
     loss_min = optimizer.current_bests['minimum'].mean
     if verbosity >= 1:
-        print('### opt loop done. x_min:', x_min, ', loss_min:', loss_min)
+        print_log('### opt loop done. x_min: ' + str(x_min) + ', loss_min: ' + str(loss_min), work_dir, log_file)
 
     return status
 

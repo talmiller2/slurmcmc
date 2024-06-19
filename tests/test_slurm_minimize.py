@@ -153,5 +153,19 @@ class test_slurm_minimize(unittest.TestCase):
         self.assertEqual(len(res_2['slurm_pool'].points_history), 2 * self.num_iters * self.num_workers)
 
 
+    def test_slurm_minimize_2params_local_with_log_file(self):
+        np.random.seed(0)
+        self.num_params = 2
+        self.param_bounds = [[-5, 5] for _ in range(self.num_params)]
+        self.expected_minima_point = np.ones(self.num_params)
+        self.num_workers = 4
+        self.num_iters = 3
+
+        result = slurm_minimize(loss_fun=loss_fun,
+                                param_bounds=self.param_bounds, num_workers=self.num_workers, num_iters=self.num_iters,
+                                cluster='local',
+                                verbosity=3, slurm_vebosity=3,
+                                work_dir=self.work_dir, log_file='log_file.txt')
+
 if __name__ == '__main__':
     unittest.main()
