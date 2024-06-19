@@ -1,3 +1,5 @@
+import os
+import shutil
 import unittest
 
 import numpy as np
@@ -30,12 +32,11 @@ class test_slurm_mcmc(unittest.TestCase):
                                          verbosity=self.verbosity, slurm_vebosity=self.verbosity,
                                          cluster='local-map', progress=False)
         samples = sampler.get_chain(flat=True)
-        samples = np.vstack([p0, samples]) # p0 is not inherently included
+        samples = np.vstack([p0, samples])  # p0 is not inherently included
         num_calculated_points = num_walkers * (num_iters + 1)
         np.testing.assert_equal(samples.shape, (num_calculated_points, num_params))
         np.testing.assert_equal(slurm_pool.points_history.shape, (num_calculated_points, num_params))
         self.assertEqual(slurm_pool.num_calls, 7)
-
 
     def test_slurm_mcmc_with_budget(self):
         num_params = 2
@@ -47,12 +48,11 @@ class test_slurm_mcmc(unittest.TestCase):
                                          verbosity=self.verbosity, slurm_vebosity=self.verbosity,
                                          cluster='local-map', progress=False, slurm_dict={'budget': 5})
         samples = sampler.get_chain(flat=True)
-        samples = np.vstack([p0, samples]) # p0 is not inherently included
+        samples = np.vstack([p0, samples])  # p0 is not inherently included
         num_calculated_points = num_walkers * (num_iters + 1)
         np.testing.assert_equal(samples.shape, (num_calculated_points, num_params))
         np.testing.assert_equal(slurm_pool.points_history.shape, (num_calculated_points, num_params))
         self.assertEqual(slurm_pool.num_calls, 8)
-
 
 
 if __name__ == '__main__':

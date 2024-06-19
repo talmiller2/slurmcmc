@@ -98,5 +98,21 @@ class test_slurmpool_local(unittest.TestCase):
         self.assertEqual(res, res_expected)
 
 
+    def test_slurmpool_local_2params_with_log_file(self):
+        os.makedirs(self.work_dir, exist_ok=True)
+        log_file = open(self.work_dir + '/log_file.txt', 'a')
+        self.slurmpool = SlurmPool(self.work_dir, cluster='local', verbosity=self.verbosity, log_file=log_file)
+        fun = lambda x: x[0] ** 2 + x[1] ** 2
+        points = [[2, 3], [3, 4], [4, 5]]
+        self.slurmpool.map(fun, points)
+        points = [[10, 11]]
+        self.slurmpool.map(fun, points)
+
+        log_file.close()
+        with open(self.work_dir + '/log_file.txt', 'r') as f:
+            content = f.read()
+            newline_count = content.count("\n")
+        self.assertEqual(newline_count, 2)
+
 if __name__ == '__main__':
     unittest.main()

@@ -10,12 +10,11 @@ class SlurmPool():
 
     cluster: 'slurm' or 'local' (run locally with submitit) or 'local-map' (run locally with map)
 
-    TODO: print to log_file
-
     # TODO: catch error if attempting to run in a dir that already exists, to avoid overwriting runs
        unless continuing from restart
     """
-    def __init__(self, work_dir, job_name='tmp', cluster='slurm', budget=int(1e6), verbosity=1, **job_params):
+    def __init__(self, work_dir, job_name='tmp', cluster='slurm', budget=int(1e6), verbosity=1, log_file=None,
+                 **job_params):
         self.num_calls = 0
         self.points_history = []
         self.values_history = []
@@ -26,15 +25,16 @@ class SlurmPool():
         self.cluster = cluster
         self.verbosity = verbosity
         self.budget = budget
+        self.log_file = log_file
         return
 
-    # TODO: add a budget option, if more points are asked than budget, need to split to several
     def map(self, fun, points):
         # split points into chunks if exceeding budget
         chunks = self.split_points(points, self.budget)
         chunk_sizes = [len(chunk) for chunk in chunks]
         if self.verbosity >= 1 and len(chunks) > 1:
-            print('split points into ' + str(len(chunks)) + ' chunks of sizes ' + str(chunk_sizes) + '.')
+            print('split points into ' + str(len(chunks)) + ' chunks of sizes ' + str(chunk_sizes) + '.',
+                  file=self.log_file)
 
         res = []
         for chunk in chunks:
@@ -51,17 +51,9 @@ class SlurmPool():
         chunks = [points[i * budget:(i + 1) * budget] for i in range(num_chunks)]
         return chunks
 
-    # # Example usage
-    # # points = [[1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 9]]
-    # points = [[1, 2], [2, 3], [3, 4]]
-    # budget = 3
-    # chunks = split_points(points, budget)
-    # for idx, chunk in enumerate(chunks):
-    #     print(f"Chunk {idx + 1}: {chunk}")
-
     def map_chunk(self, fun, points):
         if self.verbosity >= 1:
-            print('slurm_pool.map() called with ' + str(len(points)) + ' points.')
+            print('slurm_pool.map() called with ' + str(len(points)) + ' points.', file=self.log_file)
 
         if self.cluster == 'local-map':
             res = [fun(point) for point in points]
