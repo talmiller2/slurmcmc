@@ -29,6 +29,7 @@ class SlurmPool():
             error_msg = 'work_dir appears to already contain runs, move or delete it first.'
             error_msg += '\n' + 'work_dir:' + work_dir
             raise ValueError(error_msg)
+            # in case of continuing from restart, SlurmPool is loaded and not initialized so will not error.
 
         return
 

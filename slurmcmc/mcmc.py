@@ -1,30 +1,59 @@
+import os
+import pickle
+
 import emcee
 import numpy as np
-
 from slurmcmc.slurm_utils import SlurmPool, print_log
+
 
 def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=True,
                verbosity=1, slurm_vebosity=0, log_file=None,
-               work_dir='tmp', job_name='minimize', cluster='slurm', slurm_dict={}, **emcee_kwargs):
+               save_restart=False, load_restart=False, restart_file='restart.pkl',
+               work_dir='tmp', job_name='mcmc', cluster='slurm', slurm_dict={}, **emcee_kwargs):
     """
     combine submitit + emcee to allow ensemble mcmc on slurm.
     the number of parallelizable evaluations in the default emcee "move" is len(init_points)/2,
     except the first one on the init_points which is len(init_points).
-
-    # TODO: starting for restart is possible using backend, but need to also save slurmpool to keep track
-       on the runs structure. or maybe it already just works, anyway needs testing.
     """
+    if load_restart:
+        if verbosity >= 1:
+            print_log('loading restart file.', work_dir, log_file)
+            status = load_restart_fun(work_dir, restart_file)
+            initial_state = status['state']
+            sampler = status['sampler']
+            slurm_pool = status['slurm_pool']
+            sampler.pool = slurm_pool
 
-    slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, **slurm_dict)
-    nwalkers, ndim = np.array(init_points).shape
-    sampler = emcee.EnsembleSampler(nwalkers=nwalkers, ndim=ndim, log_prob_fn=log_prob_fun,
-                                    pool=slurm_pool, **emcee_kwargs)
+    else:
+        slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, **slurm_dict)
+        nwalkers, ndim = np.array(init_points).shape
+        sampler = emcee.EnsembleSampler(nwalkers=nwalkers, ndim=ndim, log_prob_fn=log_prob_fun,
+                                        pool=slurm_pool, **emcee_kwargs)
+        initial_state = init_points
 
-    initial_state = init_points
     for curr_iter in range(num_iters):
         if verbosity >= 1:
             print_log('### curr mcmc iter: ' + str(curr_iter), work_dir, log_file)
         state = sampler.run_mcmc(initial_state=initial_state, nsteps=1, progress=progress)
         initial_state = state
 
-    return sampler, slurm_pool
+        if save_restart:
+            if verbosity >= 1:
+                print_log('saving restart.', work_dir, log_file)
+            status = {'state': state, 'sampler': sampler, 'slurm_pool': slurm_pool}
+            save_restart_fun(status, work_dir, restart_file)
+            sampler.pool = slurm_pool  # need to redefine the pool becuase pickling removes sampler.pool
+
+    return sampler
+
+
+def save_restart_fun(status, work_dir, restart_file):
+    os.makedirs(work_dir, exist_ok=True)
+    with open(work_dir + '/' + restart_file, 'wb') as f:
+        pickle.dump(status, f)
+
+
+def load_restart_fun(work_dir, restart_file):
+    with open(work_dir + '/' + restart_file, 'rb') as f:
+        status = pickle.load(f)
+    return status

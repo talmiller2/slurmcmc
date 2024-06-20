@@ -4,7 +4,6 @@ import unittest
 
 import numpy as np
 from scipy.optimize import rosen
-
 from slurmcmc.optimization import slurm_minimize
 
 
@@ -121,31 +120,30 @@ class test_slurm_minimize(unittest.TestCase):
                            param_bounds=self.param_bounds, num_workers=self.num_workers, num_iters=self.num_iters,
                            cluster='local-map', verbosity=self.verbosity)
 
-    def test_slurm_minimize_2params_with_checkpoint(self):
+    def test_slurm_minimize_2params_with_restart(self):
         self.num_params = 2
         self.param_bounds = [[-5, 5] for _ in range(self.num_params)]
         self.expected_minima_point = np.ones(self.num_params)
         self.num_workers = 5
         self.num_iters = 20
 
-        # run and save checkpoint
+        # run and save restart
         res_1 = slurm_minimize(loss_fun=loss_fun,
                                param_bounds=self.param_bounds, num_workers=self.num_workers, num_iters=self.num_iters,
                                cluster='local-map', verbosity=self.verbosity,
-                               work_dir=self.work_dir, save_checkpoint=True, load_checkpoint=False,
+                               work_dir=self.work_dir, save_restart=True, load_restart=False,
                                )
         self.assertEqual(res_1['slurm_pool'].num_calls, self.num_iters)
         self.assertEqual(len(res_1['slurm_pool'].points_history), self.num_iters * self.num_workers)
 
-        # run again from previous checkpoint
+        # run again from previous restart
         res_2 = slurm_minimize(loss_fun=loss_fun,
                                param_bounds=self.param_bounds, num_workers=self.num_workers, num_iters=self.num_iters,
                                cluster='local-map', verbosity=self.verbosity,
-                               work_dir=self.work_dir, save_checkpoint=True, load_checkpoint=True,
+                               work_dir=self.work_dir, save_restart=True, load_restart=True,
                                )
         self.assertEqual(res_2['slurm_pool'].num_calls, 2 * self.num_iters)
         self.assertEqual(len(res_2['slurm_pool'].points_history), 2 * self.num_iters * self.num_workers)
-
 
     def test_slurm_minimize_2params_with_log_file(self):
         self.num_params = 2
@@ -161,6 +159,7 @@ class test_slurm_minimize(unittest.TestCase):
                                 work_dir=self.work_dir, log_file='log_file.txt')
 
         self.assertTrue(os.path.isfile(self.work_dir + '/log_file.txt'), 'log_file was not created.')
+
 
 if __name__ == '__main__':
     unittest.main()
