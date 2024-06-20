@@ -1,14 +1,12 @@
-import os
-import pickle
-
 import emcee
 import numpy as np
-from slurmcmc.slurm_utils import SlurmPool, print_log
+from slurmcmc.general_utils import print_log, save_restart_file, load_restart_file
+from slurmcmc.slurm_utils import SlurmPool
 
 
 def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=True,
                verbosity=1, slurm_vebosity=0, log_file=None,
-               save_restart=False, load_restart=False, restart_file='restart.pkl',
+               save_restart=False, load_restart=False, restart_file='mcmc_restart.pkl',
                work_dir='tmp', job_name='mcmc', cluster='slurm', slurm_dict={}, **emcee_kwargs):
     """
     combine submitit + emcee to allow ensemble mcmc on slurm.
@@ -18,7 +16,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=True,
     if load_restart:
         if verbosity >= 1:
             print_log('loading restart file.', work_dir, log_file)
-            status = load_restart_fun(work_dir, restart_file)
+            status = load_restart_file(work_dir, restart_file)
             initial_state = status['state']
             sampler = status['sampler']
             slurm_pool = status['slurm_pool']
@@ -41,19 +39,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=True,
             if verbosity >= 1:
                 print_log('saving restart.', work_dir, log_file)
             status = {'state': state, 'sampler': sampler, 'slurm_pool': slurm_pool}
-            save_restart_fun(status, work_dir, restart_file)
+            save_restart_file(status, work_dir, restart_file)
             sampler.pool = slurm_pool  # need to redefine the pool becuase pickling removes sampler.pool
 
     return sampler
-
-
-def save_restart_fun(status, work_dir, restart_file):
-    os.makedirs(work_dir, exist_ok=True)
-    with open(work_dir + '/' + restart_file, 'wb') as f:
-        pickle.dump(status, f)
-
-
-def load_restart_fun(work_dir, restart_file):
-    with open(work_dir + '/' + restart_file, 'rb') as f:
-        status = pickle.load(f)
-    return status

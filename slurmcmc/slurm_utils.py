@@ -1,6 +1,8 @@
 import os
+
 import numpy as np
 import submitit
+from slurmcmc.general_utils import print_log
 
 
 class SlurmPool():
@@ -11,6 +13,7 @@ class SlurmPool():
 
     cluster: 'slurm' or 'local' (run locally with submitit) or 'local-map' (run locally with map)
     """
+
     def __init__(self, work_dir, job_name='tmp', cluster='slurm', budget=int(1e6), verbosity=1, log_file=None,
                  **job_params):
         self.num_calls = 0
@@ -69,7 +72,7 @@ class SlurmPool():
 
         # number of parameters (dimension of each point)
         if np.array(points[0]).shape == ():
-            num_params =  1
+            num_params = 1
         else:
             num_params = np.array(points[0]).shape[0]
 
@@ -79,7 +82,7 @@ class SlurmPool():
         failed_points = np.array([p for i, p in enumerate(points) if i in inds_failed])
         success_points = np.array([p for i, p in enumerate(points) if i in inds_success])
         success_values = np.array([v for i, v in enumerate(res) if i in inds_success])
-        success_values = success_values.reshape(-1, 1) # switch to column array
+        success_values = success_values.reshape(-1, 1)  # switch to column array
         if len(inds_failed) > 0:
             self.failed_points_history = self.add_to_history(self.failed_points_history, failed_points, dim=num_params)
         if len(inds_success) > 0:
@@ -87,7 +90,6 @@ class SlurmPool():
             self.values_history = self.add_to_history(self.values_history, success_values, dim=1)
 
         return res
-
 
     def add_to_history(self, x_history, x, dim):
         """
@@ -140,11 +142,3 @@ class SlurmPool():
         np.savetxt(iteration_dir + '/outputs.txt', np.array(outputs))
 
         return outputs
-
-def print_log(string, work_dir, log_file):
-    if log_file is None:
-        print(string)
-    else:
-        os.makedirs(work_dir, exist_ok=True)
-        with open(work_dir + '/' + log_file, 'a') as log_file:
-            print(string, file=log_file)

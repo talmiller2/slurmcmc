@@ -1,14 +1,12 @@
-import os
-import pickle
-
 import nevergrad as ng
-from slurmcmc.slurm_utils import SlurmPool, print_log
+from slurmcmc.general_utils import print_log, save_restart_file, load_restart_file
+from slurmcmc.slurm_utils import SlurmPool
 
 
 def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, num_iters=10,
                    init_points=None, constraint_fun=None, num_asks_max=int(1e3),
                    verbosity=1, slurm_vebosity=0, log_file=None,
-                   save_restart=False, load_restart=False, restart_file='restart.pkl',
+                   save_restart=False, load_restart=False, restart_file='opt_restart.pkl',
                    work_dir='tmp', job_name='minimize', cluster='slurm', slurm_dict={}):
     """
     combine submitit + nevergrad to allow parallel optimization on slurm.
@@ -20,7 +18,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         if verbosity >= 1:
             print_log('loading restart file.', work_dir, log_file)
 
-            status = load_restart_fun(work_dir, restart_file)
+            status = load_restart_file(work_dir, restart_file)
             optimizer = status['optimizer']
             slurm_pool = status['slurm_pool']
             num_loss_fun_calls_total = status['num_loss_fun_calls_total']
@@ -118,23 +116,11 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         status['evaluated_points'] = evaluated_points
 
         if save_restart:
-            save_restart_fun(status, work_dir, restart_file)
+            save_restart_file(status, work_dir, restart_file)
 
     x_min = optimizer.current_bests['minimum'].parameter.value[0][0]
     loss_min = optimizer.current_bests['minimum'].mean
     if verbosity >= 1:
         print_log('### opt loop done. x_min: ' + str(x_min) + ', loss_min: ' + str(loss_min), work_dir, log_file)
 
-    return status
-
-
-def save_restart_fun(status, work_dir, restart_file):
-    os.makedirs(work_dir, exist_ok=True)
-    with open(work_dir + '/' + restart_file, 'wb') as f:
-        pickle.dump(status, f)
-
-
-def load_restart_fun(work_dir, restart_file):
-    with open(work_dir + '/' + restart_file, 'rb') as f:
-        status = pickle.load(f)
     return status
