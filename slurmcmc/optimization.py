@@ -36,7 +36,6 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
 
         if optimizer_class is None:
             optimizer_class = ng.optimizers.DifferentialEvolution(crossover="twopoints", popsize=num_workers)
-            # optimizer_class = ng.optimizers.ConfPSO(popsize=num_workers)
 
         budget = num_iters * num_workers
         optimizer = optimizer_class(parametrization=instrum, budget=budget, num_workers=num_workers)
@@ -51,7 +50,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
     ## start optimization iterations
     for curr_iter in range(num_iters):
         if verbosity >= 2:
-            print_log('### curr opt iter:' + str(curr_iter), work_dir, log_file)
+            print_log('### curr opt iter: ' + str(curr_iter), work_dir, log_file)
 
         if curr_iter == 0 and init_points is not None:
             candidates = []
