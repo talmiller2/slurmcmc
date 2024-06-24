@@ -1,14 +1,9 @@
-from scipy.optimize import minimize
-from scipy.optimize import NonlinearConstraint, rosen, minimize
-import matplotlib.colors as colors
-
-import numpy as np
 import matplotlib.pyplot as plt
-import emcee
+import numpy as np
 from matplotlib.pyplot import cm
+from scipy.optimize import rosen
 
 from slurmcmc.mcmc import slurm_mcmc
-from slurmcmc.slurm_utils import SlurmPool
 
 plt.close('all')
 
@@ -17,18 +12,23 @@ np.random.seed(0)
 param_bounds = [[-5, 5], [-5, 5]]
 minima = np.array([1, 1])
 
+
 def log_prob(x):
     return -rosen(x)
+
 
 r_constraint = 4
 x0_constraint = -1
 y0_constraint = -1
+
+
 def constraint_fun(x):
     # return > 0 for violation
     if (x[0] - x0_constraint) ** 2 + (x[1] - y0_constraint) ** 2 > r_constraint ** 2:
         return 1
     else:
         return -1
+
 
 def log_prob_with_constraint(x):
     if constraint_fun(x) > 0:
@@ -45,7 +45,8 @@ num_iters = 400
 print('num of slurmpool calls should be', num_walkers / 2 * (num_iters + 1))
 
 # initial points chosen to satisfy constraint
-p0 = np.array([[x0_constraint, y0_constraint] for _ in range(num_walkers)]) + (r_constraint * (np.random.rand(num_walkers, num_params) - 0.5))
+p0 = (np.array([[x0_constraint, y0_constraint] for _ in range(num_walkers)])
+      + (r_constraint * (np.random.rand(num_walkers, num_params) - 0.5)))
 
 # log_prob_fun = log_prob
 log_prob_fun = log_prob_with_constraint
@@ -54,10 +55,6 @@ sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_it
                      progress=False,
                      verbosity=1,
                      )
-
-# samples = sampler.get_chain()
-# samples = np.vstack([np.array([p0]), samples]) # include p0 in the samples
-# print('len(samples):', len(samples))
 
 # print('acceptance fractions:', sampler.acceptance_fraction)
 print("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler.acceptance_fraction)))
@@ -113,6 +110,7 @@ plt.tight_layout()
 
 # emcee corner plot
 import corner
+
 fig = plt.figure(num=3, figsize=(7, 7))
 corner.corner(samples_flat, labels=labels, color='k', truths=minima, truth_color='r', fig=fig)
 plt.tight_layout()
