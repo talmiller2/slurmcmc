@@ -71,25 +71,42 @@ class SlurmPool():
         self.num_calls += 1
 
         # number of parameters (dimension of each point)
-        if np.array(points[0]).shape == ():
-            num_params = 1
-        else:
-            num_params = np.array(points[0]).shape[0]
+        dim_input =  self.calc_dimension(points)
+        dim_output = self.calc_dimension(res)
 
         # update history arrays
-        inds_failed = [i for i, r in enumerate(res) if r == None or np.isnan(r)]
+        inds_failed = [i for i, r in enumerate(res) if self.check_failed(r)]
         inds_success = [i for i, r in enumerate(res) if i not in inds_failed]
         failed_points = np.array([p for i, p in enumerate(points) if i in inds_failed])
         success_points = np.array([p for i, p in enumerate(points) if i in inds_success])
         success_values = np.array([v for i, v in enumerate(res) if i in inds_success])
         success_values = success_values.reshape(-1, 1)  # switch to column array
         if len(inds_failed) > 0:
-            self.failed_points_history = self.add_to_history(self.failed_points_history, failed_points, dim=num_params)
+            self.failed_points_history = self.add_to_history(self.failed_points_history, failed_points, dim=dim_input)
         if len(inds_success) > 0:
-            self.points_history = self.add_to_history(self.points_history, success_points, dim=num_params)
-            self.values_history = self.add_to_history(self.values_history, success_values, dim=1)
+            self.points_history = self.add_to_history(self.points_history, success_points, dim=dim_input)
+            self.values_history = self.add_to_history(self.values_history, success_values, dim=dim_output)
 
         return res
+
+    def calc_dimension(self, points):
+        if np.array(points[0]).shape == ():
+            dim = 1
+        else:
+            dim = np.array(points[0]).shape[0]
+        return dim
+
+
+    def check_failed(self, r):
+        if r == None:
+            return True
+        elif type(r) in [np.ndarray, float]:
+            return np.all(np.isnan(r))
+        elif type(r) == list:
+            for e in r:
+                if e == None or np.isnan(e):
+                    return True
+        return False
 
     def add_to_history(self, x_history, x, dim):
         """

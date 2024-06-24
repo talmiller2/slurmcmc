@@ -98,9 +98,6 @@ class test_slurmpool_local(unittest.TestCase):
         self.assertEqual(res, res_expected)
 
     def test_slurmpool_local_2params_with_log_file(self):
-        # os.makedirs(self.work_dir, exist_ok=True)
-        # log_file = open(self.work_dir + '/log_file.txt', 'a')
-        # slurm_pool = SlurmPool(self.work_dir, cluster='local', verbosity=self.verbosity, log_file=log_file)
         slurm_pool = SlurmPool(self.work_dir, cluster='local', verbosity=self.verbosity, log_file='log_file.txt')
         fun = lambda x: x[0] ** 2 + x[1] ** 2
         points = [[2, 3], [3, 4], [4, 5]]
@@ -111,6 +108,28 @@ class test_slurmpool_local(unittest.TestCase):
         os.makedirs(self.work_dir + '/0', exist_ok=True)
         with self.assertRaises(ValueError):
             SlurmPool(self.work_dir, cluster='local', verbosity=self.verbosity)
+
+    def test_slurmpool_localmap_2params_3outputs(self):
+        slurm_pool = SlurmPool(self.work_dir, cluster='local-map', verbosity=self.verbosity)
+        fun = lambda x: [x[0] ** 2 + x[1] ** 2, 10 * x[0], 10 * x[1]]
+        points = [[2, 3], [3, 4], [4, 5]]
+        res_expected = [fun(point) for point in points]
+        res = slurm_pool.map(fun, points)
+        self.assertEqual(res, res_expected)
+
+    def test_slurmpool_localmap_2params_3outputs_history_with_failed_points(self):
+        slurm_pool = SlurmPool(self.work_dir, cluster='local-map', verbosity=self.verbosity)
+        fun = lambda x: [2 * x[0], 3 * x[0], 4 * x[1]]
+        fun_that_partially_fails_1 = lambda x: [2 * x[0], None, 4 * x[1]]
+        fun_that_partially_fails_2 = lambda x: [2 * x[0], 3 * x[0], np.nan]
+        points = [[2, 3], [3, 4], [4, 5]]
+        res = slurm_pool.map(fun, points)
+        _ = slurm_pool.map(fun_that_partially_fails_1, points)
+        _ = slurm_pool.map(fun_that_partially_fails_2, points)
+
+        np.testing.assert_array_equal(slurm_pool.points_history, np.array(points))
+        np.testing.assert_array_equal(slurm_pool.values_history, np.array(res).reshape(-1, 1))
+        np.testing.assert_array_equal(slurm_pool.failed_points_history, np.vstack([points, points]))
 
 
 if __name__ == '__main__':
