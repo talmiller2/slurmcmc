@@ -87,3 +87,30 @@ plt.plot(minima[0], minima[1], markersize=10, marker='*', markerfacecolor='w', m
 theta = np.linspace(0, 2 * np.pi, 100)
 plt.plot(x0_constraint + r_constraint * np.cos(theta), y0_constraint + r_constraint * np.sin(theta), color='w')
 plt.tight_layout()
+
+# plot the progression of the loss function with optimization iterations
+loss_history = result['slurm_pool'].values_history[:, 0]
+point_num_array = [i for i in range(len(loss_history))]
+
+iter_num_array = []
+loss_history_iters = []
+min_loss_history_iters = []
+for i in range(int(len(loss_history) / num_workers)):
+    iter_num_array += [num_workers * (i + 1) - 1]
+    loss_history_iters += [np.nanmin(loss_history[(num_workers * i):(num_workers * (i + 1))])]
+    if i == 0:
+        curr_best = loss_history_iters[-1]
+    else:
+        curr_best = np.nanmin([curr_best, loss_history_iters[-1]])
+    min_loss_history_iters += [curr_best]
+
+plt.figure(2, figsize=(8, 5))
+plt.plot(point_num_array, loss_history, 'b', label='all samples')
+plt.plot(iter_num_array, loss_history_iters, 'g', label='iteration min')
+plt.plot(iter_num_array, min_loss_history_iters, 'r', label='best min')
+plt.yscale('log')
+plt.xlabel('# sample')
+plt.ylabel('loss')
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
