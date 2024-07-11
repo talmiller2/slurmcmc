@@ -122,11 +122,6 @@ class SlurmPool():
         return x_history
 
     def send_and_receive_jobs(self, fun, points):
-        """
-        In case of a remote function evaluation, the function would be re-spawned in a new process
-        so there is no need to directly take it as an argument.
-        """
-
         # prepare directories and input files for the jobs and send them
         iteration_dir = self.work_dir + '/' + str(self.num_calls)
         os.makedirs(iteration_dir, exist_ok=True)
