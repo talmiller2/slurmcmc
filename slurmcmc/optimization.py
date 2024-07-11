@@ -1,3 +1,4 @@
+import numpy as np
 import nevergrad as ng
 from slurmcmc.general_utils import print_log, save_restart_file, load_restart_file
 from slurmcmc.slurm_utils import SlurmPool
@@ -20,6 +21,8 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
 
             status = load_restart_file(work_dir, restart_file)
             optimizer = status['optimizer']
+            loss_min_iters = status['loss_min_iters']
+            loss_per_iters = status['loss_per_iters']
             slurm_pool = status['slurm_pool']
             num_loss_fun_calls_total = status['num_loss_fun_calls_total']
             num_constraint_fun_calls_total = status['num_constraint_fun_calls_total']
@@ -46,6 +49,8 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         num_constraint_fun_calls_total = 0
         num_asks_total = 0
         evaluated_points = set()
+        loss_min_iters = []
+        loss_per_iters = []
 
     ## start optimization iterations
     for curr_iter in range(num_iters):
@@ -100,6 +105,9 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
 
         x_min = optimizer.current_bests['minimum'].parameter.value[0][0]
         loss_min = optimizer.current_bests['minimum'].mean
+        loss_min_iters += [loss_min]
+        loss_per_iters += [np.nanmin(results)]
+
         if verbosity >= 2:
             print_log('curr best: x_min: ' + str(x_min) + ', loss_min: ' + str(loss_min), work_dir, log_file)
 
@@ -108,6 +116,8 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         status['optimizer'] = optimizer
         status['x_min'] = x_min
         status['loss_min'] = loss_min
+        status['loss_min_iters'] = loss_min_iters
+        status['loss_per_iters'] = loss_per_iters
         status['slurm_pool'] = slurm_pool
         status['num_loss_fun_calls_total'] = num_loss_fun_calls_total
         status['num_constraint_fun_calls_total'] = num_constraint_fun_calls_total

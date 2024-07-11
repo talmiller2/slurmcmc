@@ -91,23 +91,14 @@ plt.tight_layout()
 # plot the progression of the loss function with optimization iterations
 loss_history = result['slurm_pool'].values_history[:, 0]
 point_num_array = [i for i in range(len(loss_history))]
-
-iter_num_array = []
-loss_history_iters = []
-min_loss_history_iters = []
-for i in range(int(len(loss_history) / num_workers)):
-    iter_num_array += [num_workers * (i + 1) - 1]
-    loss_history_iters += [np.nanmin(loss_history[(num_workers * i):(num_workers * (i + 1))])]
-    if i == 0:
-        curr_best = loss_history_iters[-1]
-    else:
-        curr_best = np.nanmin([curr_best, loss_history_iters[-1]])
-    min_loss_history_iters += [curr_best]
+loss_min_iters = result['loss_min_iters']
+loss_per_iters = result['loss_per_iters']
+iter_num_array = [(i + 1) * num_workers for i in range(len(loss_min_iters))]
 
 plt.figure(2, figsize=(8, 5))
 plt.plot(point_num_array, loss_history, 'b', label='all samples')
-plt.plot(iter_num_array, loss_history_iters, 'g', label='iteration min')
-plt.plot(iter_num_array, min_loss_history_iters, 'r', label='best min')
+plt.plot(iter_num_array, loss_per_iters, 'g', label='iteration min')
+plt.plot(iter_num_array, loss_min_iters, 'r', label='best min')
 plt.yscale('log')
 plt.xlabel('# sample')
 plt.ylabel('loss')
