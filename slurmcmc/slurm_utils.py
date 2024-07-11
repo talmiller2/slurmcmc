@@ -15,7 +15,7 @@ class SlurmPool():
     """
 
     def __init__(self, work_dir, job_name='tmp', cluster='slurm', budget=int(1e6), verbosity=1, log_file=None,
-                 **job_params):
+                 extra_arg=None, **job_params):
         self.num_calls = 0
         self.points_history = []
         self.values_history = []
@@ -33,6 +33,9 @@ class SlurmPool():
             error_msg += '\n' + 'work_dir:' + work_dir
             raise ValueError(error_msg)
             # in case of continuing from restart, SlurmPool is loaded and not initialized so will not error.
+
+        # capability to call the function with additional argument that is constant during the map
+        self.extra_arg = extra_arg
 
         return
 
@@ -59,12 +62,18 @@ class SlurmPool():
         chunks = [points[i * budget:(i + 1) * budget] for i in range(num_chunks)]
         return chunks
 
+    def get_fun_args(self, point):
+        args = [point]
+        if self.extra_arg is not None:
+            args += [self.extra_arg]
+        return args
+
     def map_chunk(self, fun, points):
         if self.verbosity >= 1:
             print_log('slurm_pool.map called with ' + str(len(points)) + ' points.', self.work_dir, self.log_file)
 
         if self.cluster == 'local-map':
-            res = [fun(point) for point in points]
+            res = [fun(*self.get_fun_args(point)) for point in points]
         else:
             res = self.send_and_receive_jobs(fun, points)
 
@@ -138,7 +147,7 @@ class SlurmPool():
             job_name = self.job_name + '_' + str(self.num_calls) + '_' + str(ind_point)
             self.executor = submitit.AutoExecutor(folder=point_dir, cluster=self.cluster)
             self.executor.update_parameters(slurm_job_name=job_name, **self.job_params)
-            job = self.executor.submit(fun, point)
+            job = self.executor.submit(fun, *self.get_fun_args(point))
             jobs += [job]
 
         # collect the results

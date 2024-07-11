@@ -7,6 +7,13 @@ import numpy as np
 from slurmcmc.slurm_utils import SlurmPool
 
 
+def fun_with_extra_arg(x, weather):
+    if weather == 'sunny':
+        return x ** 2
+    else:
+        return x + 30
+
+
 class test_map_local(unittest.TestCase):
     def setUp(self):
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
@@ -130,6 +137,26 @@ class test_map_local(unittest.TestCase):
         np.testing.assert_array_equal(slurm_pool.points_history, np.array(points))
         np.testing.assert_array_equal(slurm_pool.values_history, np.array(res).reshape(-1, 1))
         np.testing.assert_array_equal(slurm_pool.failed_points_history, np.vstack([points, points]))
+
+    def test_slurmpool_local_map_extra_arg(self):
+        for weather in ['sunny', 'rainy', None]:
+            slurm_pool = SlurmPool(self.work_dir, cluster='local-map', verbosity=self.verbosity, extra_arg=weather)
+            points = [1, 2, 3]
+            res_expected = [fun_with_extra_arg(point, weather) for point in points]
+            if weather is None:  # should fail
+                with self.assertRaises(TypeError):
+                    res = slurm_pool.map(fun_with_extra_arg, points)
+            else:
+                res = slurm_pool.map(fun_with_extra_arg, points)
+                self.assertEqual(res, res_expected)
+
+    def test_slurmpool_local_extra_arg(self):
+        weather = 'sunny'
+        slurm_pool = SlurmPool(self.work_dir, cluster='local', verbosity=self.verbosity, extra_arg=weather)
+        points = [1, 2, 3]
+        res_expected = [fun_with_extra_arg(point, weather) for point in points]
+        res = slurm_pool.map(fun_with_extra_arg, points)
+        self.assertEqual(res, res_expected)
 
 
 if __name__ == '__main__':
