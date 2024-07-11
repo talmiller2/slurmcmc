@@ -4,7 +4,7 @@ import unittest
 from slurmcmc.slurm_utils import SlurmPool
 
 
-class test_slurmpool_slurm(unittest.TestCase):
+class test_map_slurm(unittest.TestCase):
     def setUp(self):
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
 

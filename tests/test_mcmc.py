@@ -12,7 +12,7 @@ def log_prob_fun(x):
     return -rosen(x)
 
 
-class test_slurm_mcmc(unittest.TestCase):
+class test_mcmc(unittest.TestCase):
     def setUp(self):
         np.random.seed(0)
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir'

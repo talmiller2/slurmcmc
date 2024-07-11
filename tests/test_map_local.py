@@ -7,7 +7,7 @@ import numpy as np
 from slurmcmc.slurm_utils import SlurmPool
 
 
-class test_slurmpool_local(unittest.TestCase):
+class test_map_local(unittest.TestCase):
     def setUp(self):
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
         self.verbosity = 1

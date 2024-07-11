@@ -23,7 +23,7 @@ def constraint_fun(x, r_constraint=3, x0_constraint=-1, y0_constraint=-1):
         return -1
 
 
-class test_slurm_minimize(unittest.TestCase):
+class test_minimize(unittest.TestCase):
 
     def setUp(self):
         np.random.seed(0)
