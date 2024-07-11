@@ -1,12 +1,13 @@
-import numpy as np
 import nevergrad as ng
+import numpy as np
+
 from slurmcmc.general_utils import print_log, save_restart_file, load_restart_file
 from slurmcmc.slurm_utils import SlurmPool
 
 
 def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, num_iters=10,
                    init_points=None, constraint_fun=None, num_asks_max=int(1e3),
-                   verbosity=1, slurm_vebosity=0, log_file=None,
+                   verbosity=1, slurm_vebosity=0, log_file=None, extra_arg=None,
                    save_restart=False, load_restart=False, restart_file='opt_restart.pkl',
                    work_dir='tmp', job_name='minimize', cluster='slurm', slurm_dict={}):
     """
@@ -43,7 +44,8 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         budget = num_iters * num_workers
         optimizer = optimizer_class(parametrization=instrum, budget=budget, num_workers=num_workers)
 
-        slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, log_file=log_file, **slurm_dict)
+        slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, log_file=log_file,
+                               extra_arg=extra_arg, **slurm_dict)
 
         num_loss_fun_calls_total = 0
         num_constraint_fun_calls_total = 0

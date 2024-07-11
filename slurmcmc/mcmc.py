@@ -1,11 +1,12 @@
 import emcee
 import numpy as np
+
 from slurmcmc.general_utils import print_log, save_restart_file, load_restart_file
 from slurmcmc.slurm_utils import SlurmPool
 
 
 def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=True,
-               verbosity=1, slurm_vebosity=0, log_file=None,
+               verbosity=1, slurm_vebosity=0, log_file=None, extra_arg=None,
                save_restart=False, load_restart=False, restart_file='mcmc_restart.pkl',
                work_dir='tmp', job_name='mcmc', cluster='slurm', slurm_dict={}, **emcee_kwargs):
     """
@@ -23,7 +24,8 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=True,
             sampler.pool = slurm_pool
 
     else:
-        slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, **slurm_dict)
+        slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity,
+                               extra_arg=extra_arg, **slurm_dict)
         nwalkers, ndim = np.array(init_points).shape
         sampler = emcee.EnsembleSampler(nwalkers=nwalkers, ndim=ndim, log_prob_fn=log_prob_fun,
                                         pool=slurm_pool, **emcee_kwargs)
