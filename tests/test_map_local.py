@@ -4,6 +4,7 @@ import unittest
 
 import numpy as np
 
+from slurmcmc.general_utils import print_log
 from slurmcmc.slurm_utils import SlurmPool
 
 
@@ -12,6 +13,11 @@ def fun_with_extra_arg(x, weather):
         return x ** 2
     else:
         return x + 30
+
+
+def fun_that_writes_file(x):
+    print_log(string=str(x), work_dir='.', log_file='test_file.txt')
+    return x[0] ** 2 + x[1] ** 2
 
 
 class test_map_local(unittest.TestCase):
@@ -109,6 +115,16 @@ class test_map_local(unittest.TestCase):
         fun = lambda x: x[0] ** 2 + x[1] ** 2
         points = [[2, 3], [3, 4], [4, 5]]
         slurm_pool.map(fun, points)
+
+    def test_slurmpool_local_2params_check_query_dir(self):
+        slurm_pool = SlurmPool(self.work_dir, cluster='local', verbosity=self.verbosity)
+        points = [[2, 3], [3, 4], [4, 5]]
+        slurm_pool.map(fun_that_writes_file, points)
+
+        # check test_file was created in the query dir of each point
+        for i in range(len(points)):
+            if not os.path.isfile(self.work_dir + '/0/' + str(i) + '/test_file.txt'):
+                raise ValueError('test_file was not created in the query dir of each point.')
 
     def test_slurmpool_fail_on_existing_work_dir(self):
         os.makedirs(self.work_dir, exist_ok=True)
