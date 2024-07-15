@@ -1,7 +1,9 @@
+import json
 import os
 
 import numpy as np
 import submitit
+
 from slurmcmc.general_utils import print_log
 
 
@@ -80,7 +82,7 @@ class SlurmPool():
         self.num_calls += 1
 
         # number of parameters (dimension of each point)
-        dim_input =  self.calc_dimension(points)
+        dim_input = self.calc_dimension(points)
         dim_output = self.calc_dimension(res)
 
         # update history arrays
@@ -104,7 +106,6 @@ class SlurmPool():
         else:
             dim = np.array(points[0]).shape[0]
         return dim
-
 
     def check_failed(self, r):
         if r == None:
@@ -131,6 +132,8 @@ class SlurmPool():
         return x_history
 
     def send_and_receive_jobs(self, fun, points):
+        ini_dir = os.getcwd()
+
         # prepare directories and input files for the jobs and send them
         iteration_dir = self.work_dir + '/' + str(self.num_calls)
         os.makedirs(iteration_dir, exist_ok=True)
@@ -141,12 +144,21 @@ class SlurmPool():
             os.makedirs(point_dir, exist_ok=True)
             np.savetxt(point_dir + '/input.txt', [point])
 
+        # save current iteration points in the main iteration_dir
+        np.savetxt(iteration_dir + '/inputs.txt', np.array(points))
+        if self.extra_arg is not None:
+            # save the extra_arg in the run folder to document the full input used for this point
+            extra_arg_file = iteration_dir + '/extra_arg.txt'
+            with open(extra_arg_file, 'w') as json_file:
+                json.dump(self.extra_arg, json_file)
+
         # send the jobs
         jobs = []
         for ind_point, (point, point_dir) in enumerate(zip(points, point_dirs)):
             job_name = self.job_name + '_' + str(self.num_calls) + '_' + str(ind_point)
             self.executor = submitit.AutoExecutor(folder=point_dir, cluster=self.cluster)
             self.executor.update_parameters(slurm_job_name=job_name, **self.job_params)
+            os.chdir(point_dir)  # let each point evaluation be born in its own dir # TODO: write a test that requires this
             job = self.executor.submit(fun, *self.get_fun_args(point))
             jobs += [job]
 
@@ -158,8 +170,8 @@ class SlurmPool():
             np.savetxt(point_dir + '/output.txt', [output])
             outputs += [output]
 
-        # save current iteration points and results
-        np.savetxt(iteration_dir + '/inputs.txt', np.array(points))
+        # save current iteration results
         np.savetxt(iteration_dir + '/outputs.txt', np.array(outputs))
 
+        os.chdir(ini_dir)  # return to initial dir
         return outputs
