@@ -8,6 +8,8 @@ from slurmcmc.slurm_utils import SlurmPool
 
 class test_map_local_imported_fun(unittest.TestCase):
     def setUp(self):
+        os.chdir(os.path.dirname(__file__)) # needed to make tests not crash on a cluster
+
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
         self.verbosity = 1
 

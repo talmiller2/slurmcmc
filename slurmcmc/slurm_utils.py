@@ -158,7 +158,7 @@ class SlurmPool():
             job_name = self.job_name + '_' + str(self.num_calls) + '_' + str(ind_point)
             self.executor = submitit.AutoExecutor(folder=point_dir, cluster=self.cluster)
             self.executor.update_parameters(slurm_job_name=job_name, **self.job_params)
-            os.chdir(point_dir)  # each point evaluation (query) is born in its own dir
+            os.chdir(point_dir) # each point evaluation (query) is born in its own dir
             job = self.executor.submit(fun, *self.get_fun_args(point))
             jobs += [job]
 
