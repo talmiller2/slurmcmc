@@ -4,7 +4,7 @@ import os
 import numpy as np
 import submitit
 
-from slurmcmc.general_utils import print_log
+from slurmcmc.general_utils import print_log, combine_args
 
 
 class SlurmPool():
@@ -64,18 +64,15 @@ class SlurmPool():
         chunks = [points[i * budget:(i + 1) * budget] for i in range(num_chunks)]
         return chunks
 
-    def get_fun_args(self, point):
-        args = [point]
-        if self.extra_arg is not None:
-            args += [self.extra_arg]
-        return args
+    def _combine_args(self, point):
+        return combine_args(point, self.extra_arg)
 
     def map_chunk(self, fun, points):
         if self.verbosity >= 1:
             print_log('slurm_pool.map called with ' + str(len(points)) + ' points.', self.work_dir, self.log_file)
 
         if self.cluster == 'local-map':
-            res = [fun(*self.get_fun_args(point)) for point in points]
+            res = [fun(*self._combine_args(point)) for point in points]
         else:
             res = self.send_and_receive_jobs(fun, points)
 
@@ -158,8 +155,8 @@ class SlurmPool():
             job_name = self.job_name + '_' + str(self.num_calls) + '_' + str(ind_point)
             self.executor = submitit.AutoExecutor(folder=point_dir, cluster=self.cluster)
             self.executor.update_parameters(slurm_job_name=job_name, **self.job_params)
-            os.chdir(point_dir) # each point evaluation (query) is born in its own dir
-            job = self.executor.submit(fun, *self.get_fun_args(point))
+            os.chdir(point_dir)  # each point evaluation (query) is born in its own dir
+            job = self.executor.submit(fun, *self._combine_args(point))
             jobs += [job]
 
         # collect the results

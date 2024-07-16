@@ -51,9 +51,7 @@ p0 = (np.array([[x0_constraint, y0_constraint] for _ in range(num_walkers)])
 # log_prob_fun = log_prob
 log_prob_fun = log_prob_with_constraint
 sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
-                     cluster='local-map',
-                     progress=False,
-                     )
+                     cluster='local-map')
 
 # print('acceptance fractions:', sampler.acceptance_fraction)
 print("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler.acceptance_fraction)))

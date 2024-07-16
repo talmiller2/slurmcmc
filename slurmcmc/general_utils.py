@@ -21,3 +21,10 @@ def load_restart_file(work_dir, restart_file):
     with open(work_dir + '/' + restart_file, 'rb') as f:
         status = pickle.load(f)
     return status
+
+
+def combine_args(arg, extra_arg=None):
+    args = [arg]
+    if extra_arg is not None:
+        args += [extra_arg]
+    return args

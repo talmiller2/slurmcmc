@@ -1,7 +1,7 @@
 import nevergrad as ng
 import numpy as np
 
-from slurmcmc.general_utils import print_log, save_restart_file, load_restart_file
+from slurmcmc.general_utils import print_log, save_restart_file, load_restart_file, combine_args
 from slurmcmc.slurm_utils import SlurmPool
 
 
@@ -12,8 +12,8 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
                    work_dir='tmp', job_name='minimize', cluster='slurm', slurm_dict={}):
     """
     combine submitit + nevergrad to allow parallel optimization on slurm.
-    has capability to keep drawing points from optimizer.ask() until num_workers points are found that were not
-    already calculated previously, and that pass constraint_fun.
+    has capability to keep drawing points using optimizer.ask() until num_workers points are found, that were not
+    already calculated previously, and that pass constraint_fun. This prevents wasting compute on irrelevant points.
     """
 
     if load_restart:
@@ -63,13 +63,15 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         if curr_iter == 0 and init_points is not None:
             candidates = []
             for init_point in init_points:
+                # construct candidates in the nevergrad format
                 candidate = instrum.spawn_child()
                 candidate.value = ((init_point,), {})
                 candidates += [candidate]
 
             if constraint_fun is not None:
                 for ind_candidate, candidate in enumerate(candidates):
-                    constraint_passed = constraint_fun(*candidate.args, **candidate.kwargs) <= 0
+                    point = candidate.args[0]
+                    constraint_passed = constraint_fun(*combine_args(point, extra_arg)) <= 0
                     num_constraint_fun_calls_total += 1
                     if not constraint_passed:
                         raise ValueError('init point index ' + str(ind_candidate) + ' does not satisfy constraint.')
@@ -85,7 +87,8 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
                 candidate_tuple = tuple(candidate.value[0][0])
                 if candidate_tuple not in evaluated_points:
                     if constraint_fun is not None:
-                        constraint_passed = constraint_fun(*candidate.args, **candidate.kwargs) <= 0
+                        point = candidate.args[0]
+                        constraint_passed = constraint_fun(*combine_args(point, extra_arg)) <= 0
                         num_constraint_fun_calls_total += 1
 
                     if constraint_fun is not None and not constraint_passed:

@@ -17,7 +17,6 @@ class test_mcmc(unittest.TestCase):
         np.random.seed(0)
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
         self.verbosity = 1
-        self.progress = False
 
     def tearDown(self):
         if os.path.isdir(self.work_dir):
@@ -32,7 +31,7 @@ class test_mcmc(unittest.TestCase):
         p0 = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
         sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
                              verbosity=self.verbosity, slurm_vebosity=self.verbosity,
-                             cluster='local-map', progress=self.progress)
+                             cluster='local-map')
 
         samples = sampler.get_chain(flat=True)
         samples = np.vstack([p0, samples])  # p0 is not inherently included
@@ -49,7 +48,7 @@ class test_mcmc(unittest.TestCase):
         p0 = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
         sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
                              verbosity=self.verbosity, slurm_vebosity=self.verbosity,
-                             cluster='local-map', progress=self.progress, slurm_dict={'budget': 5})
+                             cluster='local-map', slurm_dict={'budget': 5})
         samples = sampler.get_chain(flat=True)
         samples = np.vstack([p0, samples])  # p0 is not inherently included
         num_calculated_points = num_walkers * (num_iters + 1)
@@ -65,7 +64,7 @@ class test_mcmc(unittest.TestCase):
 
         sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
                              verbosity=self.verbosity, slurm_vebosity=self.verbosity,
-                             cluster='local-map', progress=self.progress,
+                             cluster='local-map',
                              work_dir=self.work_dir, log_file='log_file.txt')
 
         self.assertTrue(os.path.isfile(self.work_dir + '/log_file.txt'), 'log_file was not created.')
@@ -85,7 +84,7 @@ class test_mcmc(unittest.TestCase):
 
         sampler_1 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
                                verbosity=self.verbosity, slurm_vebosity=self.verbosity,
-                               cluster='local-map', progress=False,
+                               cluster='local-map',
                                work_dir=self.work_dir, save_restart=True, load_restart=False)
 
         total_num_slurm_call = num_slurm_call_init + num_slurm_call_mcmc
@@ -97,7 +96,7 @@ class test_mcmc(unittest.TestCase):
 
         sampler_2 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
                                verbosity=self.verbosity, slurm_vebosity=self.verbosity,
-                               cluster='local-map', progress=False,
+                               cluster='local-map',
                                work_dir=self.work_dir, save_restart=True, load_restart=True)
 
         total_num_slurm_call = num_slurm_call_init + 2 * num_slurm_call_mcmc

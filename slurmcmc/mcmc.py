@@ -5,7 +5,7 @@ from slurmcmc.general_utils import print_log, save_restart_file, load_restart_fi
 from slurmcmc.slurm_utils import SlurmPool
 
 
-def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=True,
+def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=False,
                verbosity=1, slurm_vebosity=0, log_file=None, extra_arg=None,
                save_restart=False, load_restart=False, restart_file='mcmc_restart.pkl',
                work_dir='tmp', job_name='mcmc', cluster='slurm', slurm_dict={}, **emcee_kwargs):
