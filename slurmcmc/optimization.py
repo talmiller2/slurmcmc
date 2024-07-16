@@ -25,6 +25,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
             loss_min_iters = status['loss_min_iters']
             loss_per_iters = status['loss_per_iters']
             slurm_pool = status['slurm_pool']
+            ini_iter = status['ini_iter']
             num_loss_fun_calls_total = status['num_loss_fun_calls_total']
             num_constraint_fun_calls_total = status['num_constraint_fun_calls_total']
             num_asks_total = status['num_asks_total']
@@ -46,7 +47,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
 
         slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, log_file=log_file,
                                extra_arg=extra_arg, **slurm_dict)
-
+        ini_iter = 0
         num_loss_fun_calls_total = 0
         num_constraint_fun_calls_total = 0
         num_asks_total = 0
@@ -55,7 +56,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         loss_per_iters = []
 
     ## start optimization iterations
-    for curr_iter in range(num_iters):
+    for curr_iter in range(ini_iter, ini_iter + num_iters):
         if verbosity >= 2:
             print_log('### curr opt iter: ' + str(curr_iter), work_dir, log_file)
 
@@ -121,6 +122,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         status['loss_min_iters'] = loss_min_iters
         status['loss_per_iters'] = loss_per_iters
         status['slurm_pool'] = slurm_pool
+        status['ini_iter'] = curr_iter + 1
         status['num_loss_fun_calls_total'] = num_loss_fun_calls_total
         status['num_constraint_fun_calls_total'] = num_constraint_fun_calls_total
         status['num_asks_total'] = num_asks_total

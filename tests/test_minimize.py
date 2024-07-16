@@ -135,6 +135,7 @@ class test_minimize(unittest.TestCase):
                                )
         self.assertEqual(res_1['slurm_pool'].num_calls, self.num_iters)
         self.assertEqual(len(res_1['slurm_pool'].points_history), self.num_iters * self.num_workers)
+        self.assertEqual(res_1['ini_iter'], self.num_iters)
 
         # run again from previous restart
         res_2 = slurm_minimize(loss_fun=loss_fun,
@@ -144,6 +145,7 @@ class test_minimize(unittest.TestCase):
                                )
         self.assertEqual(res_2['slurm_pool'].num_calls, 2 * self.num_iters)
         self.assertEqual(len(res_2['slurm_pool'].points_history), 2 * self.num_iters * self.num_workers)
+        self.assertEqual(res_2['ini_iter'], 2 * self.num_iters)
 
     def test_slurm_minimize_2params_with_log_file(self):
         self.num_params = 2
