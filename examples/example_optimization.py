@@ -96,9 +96,9 @@ loss_per_iters = result['loss_per_iters']
 iter_num_array = [(i + 1) * num_workers for i in range(len(loss_min_iters))]
 
 plt.figure(2, figsize=(8, 5))
-plt.plot(point_num_array, loss_history, 'b', label='all samples')
-plt.plot(iter_num_array, loss_per_iters, 'g', label='iteration min')
-plt.plot(iter_num_array, loss_min_iters, 'r', label='best min')
+plt.plot(point_num_array, loss_history, '.b', label='all samples')
+plt.plot(iter_num_array, loss_per_iters, '-og', label='iteration min')
+plt.plot(iter_num_array, loss_min_iters, '-or', label='best min')
 plt.yscale('log')
 plt.xlabel('# sample')
 plt.ylabel('loss')
