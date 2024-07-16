@@ -53,7 +53,6 @@ result = slurm_minimize(
     constraint_fun=constraint_fun,
     cluster='local-map',
     optimizer_class=optimizer_class,
-    verbosity=3,
 )
 
 print('num_loss_fun_calls_total:', result['num_loss_fun_calls_total'])

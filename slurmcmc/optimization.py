@@ -18,7 +18,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
 
     if load_restart:
         if verbosity >= 1:
-            print_log('loading restart file.', work_dir, log_file)
+            print_log('    loading restart file.', work_dir, log_file)
 
             status = load_restart_file(work_dir, restart_file)
             optimizer = status['optimizer']
@@ -57,7 +57,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
 
     ## start optimization iterations
     for curr_iter in range(ini_iter, ini_iter + num_iters):
-        if verbosity >= 2:
+        if verbosity >= 1:
             print_log('### curr opt iter: ' + str(curr_iter), work_dir, log_file)
 
         if curr_iter == 0 and init_points is not None:
@@ -129,6 +129,8 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         status['evaluated_points'] = evaluated_points
 
         if save_restart:
+            if verbosity >= 3:
+                print_log('saving restart.', work_dir, log_file)
             save_restart_file(status, work_dir, restart_file)
 
     x_min = optimizer.current_bests['minimum'].parameter.value[0][0]

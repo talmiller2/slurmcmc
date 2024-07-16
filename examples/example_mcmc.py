@@ -53,7 +53,6 @@ log_prob_fun = log_prob_with_constraint
 sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
                      cluster='local-map',
                      progress=False,
-                     verbosity=1,
                      )
 
 # print('acceptance fractions:', sampler.acceptance_fraction)
