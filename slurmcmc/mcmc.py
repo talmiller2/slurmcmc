@@ -22,6 +22,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=True,
             sampler = status['sampler']
             slurm_pool = status['slurm_pool']
             sampler.pool = slurm_pool
+            ini_iter = status['ini_iter']
 
     else:
         slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity,
@@ -30,8 +31,9 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=True,
         sampler = emcee.EnsembleSampler(nwalkers=nwalkers, ndim=ndim, log_prob_fn=log_prob_fun,
                                         pool=slurm_pool, **emcee_kwargs)
         initial_state = init_points
+        ini_iter = 0
 
-    for curr_iter in range(num_iters):
+    for curr_iter in range(ini_iter, ini_iter + num_iters):
         if verbosity >= 1:
             print_log('### curr mcmc iter: ' + str(curr_iter), work_dir, log_file)
         state = sampler.run_mcmc(initial_state=initial_state, nsteps=1, progress=progress)
@@ -40,7 +42,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=True,
         if save_restart:
             if verbosity >= 1:
                 print_log('saving restart.', work_dir, log_file)
-            status = {'state': state, 'sampler': sampler, 'slurm_pool': slurm_pool}
+            status = {'state': state, 'sampler': sampler, 'slurm_pool': slurm_pool, 'ini_iter': curr_iter + 1}
             save_restart_file(status, work_dir, restart_file)
             sampler.pool = slurm_pool  # need to redefine the pool becuase pickling removes sampler.pool
 

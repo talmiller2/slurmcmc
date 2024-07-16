@@ -95,7 +95,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
                         candidates += [candidate]
 
             if verbosity >= 3:
-                print_log('optimizer.ask was called ' + str(num_asks) + ' times', work_dir, log_file)
+                print_log('    optimizer.ask was called ' + str(num_asks) + ' times', work_dir, log_file)
 
             num_asks_total += num_asks
 
@@ -112,7 +112,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         loss_per_iters += [np.nanmin(results)]
 
         if verbosity >= 2:
-            print_log('curr best: x_min: ' + str(x_min) + ', loss_min: ' + str(loss_min), work_dir, log_file)
+            print_log('    curr best: x_min: ' + str(x_min) + ', loss_min: ' + str(loss_min), work_dir, log_file)
 
         # optimization status
         status = {}

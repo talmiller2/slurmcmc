@@ -6,7 +6,7 @@ import emcee
 import numpy as np
 from scipy.optimize import rosen
 from slurmcmc.mcmc import slurm_mcmc
-
+from slurmcmc.general_utils import load_restart_file
 
 def log_prob_fun(x):
     return -rosen(x)
@@ -84,24 +84,28 @@ class test_mcmc(unittest.TestCase):
         p0 = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
 
         sampler_1 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
-                             verbosity=self.verbosity, slurm_vebosity=self.verbosity,
-                             cluster='local-map', progress=False,
-                             work_dir=self.work_dir, save_restart=True, load_restart=False)
+                               verbosity=self.verbosity, slurm_vebosity=self.verbosity,
+                               cluster='local-map', progress=False,
+                               work_dir=self.work_dir, save_restart=True, load_restart=False)
 
         total_num_slurm_call = num_slurm_call_init + num_slurm_call_mcmc
         total_num_points_calc = num_points_calc_init + num_points_calc_mcmc
         self.assertEqual(sampler_1.pool.num_calls, total_num_slurm_call)
         self.assertEqual(len(sampler_1.pool.points_history), total_num_points_calc)
+        restart_1 = load_restart_file(self.work_dir, restart_file='mcmc_restart.pkl')
+        self.assertEqual(restart_1['ini_iter'], num_iters)
 
         sampler_2 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
-                              verbosity=self.verbosity, slurm_vebosity=self.verbosity,
-                              cluster='local-map', progress=False,
-                              work_dir=self.work_dir, save_restart=True, load_restart=True)
+                               verbosity=self.verbosity, slurm_vebosity=self.verbosity,
+                               cluster='local-map', progress=False,
+                               work_dir=self.work_dir, save_restart=True, load_restart=True)
 
         total_num_slurm_call = num_slurm_call_init + 2 * num_slurm_call_mcmc
         total_num_points_calc = num_points_calc_init + 2 * num_points_calc_mcmc
         self.assertEqual(sampler_2.pool.num_calls, total_num_slurm_call)
         self.assertEqual(len(sampler_2.pool.points_history), total_num_points_calc)
+        restart_2 = load_restart_file(self.work_dir, restart_file='mcmc_restart.pkl')
+        self.assertEqual(restart_2['ini_iter'], 2 * num_iters)
 
 if __name__ == '__main__':
     unittest.main()
