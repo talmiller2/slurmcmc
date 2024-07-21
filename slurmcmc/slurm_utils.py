@@ -4,8 +4,9 @@ import os
 import numpy as np
 import submitit
 
-from slurmcmc.general_utils import print_log, combine_args
+from slurmcmc.general_utils import print_log, combine_args, set_logging
 
+import logging
 
 class SlurmPool():
     """
@@ -30,6 +31,8 @@ class SlurmPool():
         self.budget = budget
         self.log_file = log_file
 
+        set_logging(self.work_dir, self.log_file)
+
         if cluster in ['local', 'slurm'] and os.path.isdir(work_dir + '/0'):
             error_msg = 'work_dir appears to already contain runs, move or delete it first.'
             error_msg += '\n' + 'work_dir:' + work_dir
@@ -46,8 +49,9 @@ class SlurmPool():
         chunks = self.split_points(points, self.budget)
         chunk_sizes = [len(chunk) for chunk in chunks]
         if self.verbosity >= 1 and len(chunks) > 1:
-            print_log('split points into ' + str(len(chunks)) + ' chunks of sizes ' + str(chunk_sizes) + '.',
-                      self.work_dir, self.log_file)
+            # print_log('split points into ' + str(len(chunks)) + ' chunks of sizes ' + str(chunk_sizes) + '.',
+            #           self.work_dir, self.log_file)
+            logging.info('split points into ' + str(len(chunks)) + ' chunks of sizes ' + str(chunk_sizes) + '.')
 
         res = []
         for chunk in chunks:
@@ -69,7 +73,8 @@ class SlurmPool():
 
     def map_chunk(self, fun, points):
         if self.verbosity >= 1:
-            print_log('slurm_pool.map called with ' + str(len(points)) + ' points.', self.work_dir, self.log_file)
+            # print_log('slurm_pool.map called with ' + str(len(points)) + ' points.', self.work_dir, self.log_file)
+            logging.info('slurm_pool.map called with ' + str(len(points)) + ' points.')
 
         if self.cluster == 'local-map':
             res = [fun(*self._combine_args(point)) for point in points]

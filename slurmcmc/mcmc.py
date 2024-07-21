@@ -1,7 +1,8 @@
+import logging
+
 import emcee
 import numpy as np
-
-from slurmcmc.general_utils import print_log, save_restart_file, load_restart_file
+from slurmcmc.general_utils import set_logging, save_restart_file, load_restart_file
 from slurmcmc.slurm_utils import SlurmPool
 
 
@@ -14,9 +15,11 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=False,
     the number of parallelizable evaluations in the default emcee "move" is len(init_points)/2,
     except the first one on the init_points which is len(init_points).
     """
+    set_logging(work_dir, log_file)
+
     if load_restart:
         if verbosity >= 1:
-            print_log('loading restart file.', work_dir, log_file)
+            logging.info('loading restart file.')
             status = load_restart_file(work_dir, restart_file)
             initial_state = status['state']
             sampler = status['sampler']
@@ -35,13 +38,13 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=False,
 
     for curr_iter in range(ini_iter, ini_iter + num_iters):
         if verbosity >= 1:
-            print_log('### curr mcmc iter: ' + str(curr_iter), work_dir, log_file)
+            logging.info('### curr mcmc iter: ' + str(curr_iter))
         state = sampler.run_mcmc(initial_state=initial_state, nsteps=1, progress=progress)
         initial_state = state
 
         if save_restart:
             if verbosity >= 3:
-                print_log('    saving restart.', work_dir, log_file)
+                logging.info('    saving restart.')
             status = {'state': state, 'sampler': sampler, 'slurm_pool': slurm_pool, 'ini_iter': curr_iter + 1}
             save_restart_file(status, work_dir, restart_file)
             sampler.pool = slurm_pool  # need to redefine the pool becuase pickling removes sampler.pool

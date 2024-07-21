@@ -1,7 +1,8 @@
+import logging
+
 import nevergrad as ng
 import numpy as np
-
-from slurmcmc.general_utils import print_log, save_restart_file, load_restart_file, combine_args
+from slurmcmc.general_utils import set_logging, save_restart_file, load_restart_file, combine_args
 from slurmcmc.slurm_utils import SlurmPool
 
 
@@ -15,10 +16,11 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
     has capability to keep drawing points using optimizer.ask() until num_workers points are found, that were not
     already calculated previously, and that pass constraint_fun. This prevents wasting compute on irrelevant points.
     """
+    set_logging(work_dir, log_file)
 
     if load_restart:
         if verbosity >= 1:
-            print_log('loading restart file.', work_dir, log_file)
+            logging.info('loading restart file.')
 
             status = load_restart_file(work_dir, restart_file)
             optimizer = status['optimizer']
@@ -58,7 +60,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
     ## start optimization iterations
     for curr_iter in range(ini_iter, ini_iter + num_iters):
         if verbosity >= 1:
-            print_log('### curr opt iter: ' + str(curr_iter), work_dir, log_file)
+            logging.info('### curr opt iter: ' + str(curr_iter))
 
         if curr_iter == 0 and init_points is not None:
             candidates = []
@@ -98,7 +100,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
                         candidates += [candidate]
 
             if verbosity >= 3:
-                print_log('    optimizer.ask was called ' + str(num_asks) + ' times', work_dir, log_file)
+                logging.info('    optimizer.ask was called ' + str(num_asks) + ' times')
 
             num_asks_total += num_asks
 
@@ -115,7 +117,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
         loss_per_iters += [np.nanmin(results)]
 
         if verbosity >= 2:
-            print_log('    curr best: x_min: ' + str(x_min) + ', loss_min: ' + str(loss_min), work_dir, log_file)
+            logging.info('    curr best: x_min: ' + str(x_min) + ', loss_min: ' + str(loss_min))
 
         # optimization status
         status = {}
@@ -133,12 +135,13 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
 
         if save_restart:
             if verbosity >= 3:
-                print_log('saving restart.', work_dir, log_file)
+                logging.info('    saving restart.')
+
             save_restart_file(status, work_dir, restart_file)
 
     x_min = optimizer.current_bests['minimum'].parameter.value[0][0]
     loss_min = optimizer.current_bests['minimum'].mean
     if verbosity >= 1:
-        print_log('### opt loop done. x_min: ' + str(x_min) + ', loss_min: ' + str(loss_min), work_dir, log_file)
+        logging.info('### opt loop done. x_min: ' + str(x_min) + ', loss_min: ' + str(loss_min))
 
     return status

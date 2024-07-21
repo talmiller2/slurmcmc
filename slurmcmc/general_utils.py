@@ -1,5 +1,40 @@
+import logging
 import os
 import pickle
+
+
+def set_logging(work_dir=None, log_file=None):
+    if log_file is not None:
+        # create save directory and log file
+        os.makedirs(work_dir, exist_ok=True)
+        log_file_path = work_dir + '/' + log_file
+
+        # basic logging definition
+        logger = logging.getLogger()
+        logger.setLevel(logging.INFO)
+
+        # remove any previously defined loggers
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
+
+        # print log messages to a log file
+        fh = logging.FileHandler(log_file_path)
+        fh_formatter = logging.Formatter(fmt='%(asctime)s %(message)s', datefmt='%d-%m-%Y %H:%M:%S')
+        fh.setFormatter(fh_formatter)
+        fh.setLevel(logging.INFO)
+        logger.addHandler(fh)
+
+        # print log messages to the console/termnal
+        ch = logging.StreamHandler()
+        ch_formatter = logging.Formatter('%(message)s')
+        ch.setFormatter(ch_formatter)
+        ch.setLevel(logging.INFO)
+        logger.addHandler(ch)
+
+    else:
+        # print log messages to the console/terminal only
+        logging.basicConfig(format='%(message)s', level=logging.DEBUG)
+    return
 
 
 def print_log(string, work_dir, log_file):
