@@ -18,7 +18,7 @@ def slurm_minimize(loss_fun, param_bounds, optimizer_class=None, num_workers=1, 
 
     if load_restart:
         if verbosity >= 1:
-            print_log('    loading restart file.', work_dir, log_file)
+            print_log('loading restart file.', work_dir, log_file)
 
             status = load_restart_file(work_dir, restart_file)
             optimizer = status['optimizer']

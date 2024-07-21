@@ -16,7 +16,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=False,
     """
     if load_restart:
         if verbosity >= 1:
-            print_log('    loading restart file.', work_dir, log_file)
+            print_log('loading restart file.', work_dir, log_file)
             status = load_restart_file(work_dir, restart_file)
             initial_state = status['state']
             sampler = status['sampler']
