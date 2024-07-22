@@ -1,12 +1,11 @@
 import json
+import logging
 import os
 
 import numpy as np
 import submitit
+from slurmcmc.general_utils import combine_args, set_logging
 
-from slurmcmc.general_utils import print_log, combine_args, set_logging
-
-import logging
 
 class SlurmPool():
     """
@@ -49,8 +48,6 @@ class SlurmPool():
         chunks = self.split_points(points, self.budget)
         chunk_sizes = [len(chunk) for chunk in chunks]
         if self.verbosity >= 1 and len(chunks) > 1:
-            # print_log('split points into ' + str(len(chunks)) + ' chunks of sizes ' + str(chunk_sizes) + '.',
-            #           self.work_dir, self.log_file)
             logging.info('split points into ' + str(len(chunks)) + ' chunks of sizes ' + str(chunk_sizes) + '.')
 
         res = []
@@ -73,7 +70,6 @@ class SlurmPool():
 
     def map_chunk(self, fun, points):
         if self.verbosity >= 1:
-            # print_log('slurm_pool.map called with ' + str(len(points)) + ' points.', self.work_dir, self.log_file)
             logging.info('slurm_pool.map called with ' + str(len(points)) + ' points.')
 
         if self.cluster == 'local-map':

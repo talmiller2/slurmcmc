@@ -3,8 +3,8 @@ import shutil
 import unittest
 
 import numpy as np
+import torch
 from scipy.optimize import rosen
-
 from slurmcmc.optimization import slurm_minimize
 
 
@@ -51,6 +51,7 @@ class test_minimize(unittest.TestCase):
 
     def setUp(self):
         np.random.seed(0)
+        torch.manual_seed(0)
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
         self.verbosity = 1
 
@@ -121,7 +122,8 @@ class test_minimize(unittest.TestCase):
         param_bounds = [[-5, 5] for _ in range(num_params)]
         expected_minima_point = np.ones(num_params)
         num_workers = 10
-        num_iters = 30
+        num_iters = 40
+        np.random.seed(0)
 
         init_points = [np.array([-1, -1]) + np.random.rand(2) for _ in range(num_workers)]
         result = slurm_minimize(loss_fun=loss_fun, constraint_fun=constraint_fun, init_points=init_points,
@@ -213,6 +215,21 @@ class test_minimize(unittest.TestCase):
                                 work_dir=self.work_dir)
         self.assertLessEqual(np.linalg.norm(result['x_min'] - expected_minima_point), 0.5)
         self.assertLessEqual(result['loss_min'], 0.05)
+
+    def test_slurm_minimize_1param_botorch(self):
+        num_params = 1
+        param_bounds = [[-5, 5] for _ in range(num_params)]
+        expected_minima_point = np.ones(num_params)
+        num_workers = 5
+        num_iters = 10
+
+        result = slurm_minimize(loss_fun=loss_fun_1d,
+                                param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                                optimizer_package='botorch',
+                                cluster='local-map', verbosity=self.verbosity)
+
+        self.assertLessEqual(np.linalg.norm(result['x_min'] - expected_minima_point), 0.02)
+        self.assertLessEqual(result['loss_min'], 1e-3)
 
 
 if __name__ == '__main__':

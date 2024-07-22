@@ -1,12 +1,15 @@
 import matplotlib.pyplot as plt
 import nevergrad as ng
 import numpy as np
+import torch
+import time
 
 from matplotlib.pyplot import cm
 from scipy.optimize import rosen
 from slurmcmc.optimization import slurm_minimize
 
 np.random.seed(0)
+torch.manual_seed(0)
 
 plt.close('all')
 
@@ -39,22 +42,40 @@ def loss_fun_with_constraint(x):
     else:
         return loss_fun(x)
 
-
 num_workers = 10
 num_iters = 30
 
+## define the optimization algorithm
+
+# in the nevergrad package, the parallelizable alagorithms are Differential-Evolution and Particle-Swarm-Optimization
+# (see https://facebookresearch.github.io/nevergrad/machinelearning.html)
+optimizer_package = 'nevergrad'
 optimizer_class = ng.optimizers.DifferentialEvolution(crossover="twopoints", popsize=num_workers)
 # optimizer_class = ng.optimizers.ConfPSO(popsize=num_workers)
 
+# the nevergrad package also supports baysian-optimizaiton algorithms but that are parallelizable
+# in the botorch package there are bayesian-optimization algorithms that are parallelizable
+# (see https://botorch.org/tutorials/closed_loop_botorch_only)
+# optimizer_package = 'botorch'
+# optimizer_class = None
+botorch_kwargs = {}
+# botorch_kwargs = {'num_restarts': 5, 'raw_samples': 5}
+
+time_start = time.time()
 result = slurm_minimize(
     loss_fun=loss_fun,
     # loss_fun=loss_fun_with_constraint,
-    param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
     constraint_fun=constraint_fun,
+    param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
     cluster='local-map',
+    verbosity=3,
+    optimizer_package=optimizer_package,
     optimizer_class=optimizer_class,
+    botorch_kwargs=botorch_kwargs,
 )
+time_end = time.time()
 
+print('opt calculation time:', time_end - time_start, 'seconds.')
 print('num_loss_fun_calls_total:', result['num_loss_fun_calls_total'])
 print('num_constraint_fun_calls_total:', result['num_constraint_fun_calls_total'])
 print('num_asks_total:', result['num_asks_total'])
@@ -80,7 +101,10 @@ for ind_iter, pos in enumerate(history):
     plt.plot(pos[0], pos[1], marker='o', markersize=4, color=color_list[ind_iter], linewidth=0)
 
 # plot analytic minima point for reference
-plt.plot(minima[0], minima[1], markersize=10, marker='*', markerfacecolor='w', markeredgecolor='k', lw=0)
+# plt.plot(minima[0], minima[1], markersize=10, marker='*', markerfacecolor='w', markeredgecolor='k', lw=0)
+for markeredgecolor, markeredgewidth in zip(['k', 'w'], [4, 2]):
+    plt.plot(minima[0], minima[1], markersize=10, marker='o',
+             markerfacecolor='none', markeredgecolor=markeredgecolor, markeredgewidth=markeredgewidth)
 
 # plot constraint bound
 theta = np.linspace(0, 2 * np.pi, 100)
@@ -92,6 +116,7 @@ loss_history = result['slurm_pool'].values_history[:, 0]
 point_num_array = [i for i in range(len(loss_history))]
 loss_min_iters = result['loss_min_iters']
 loss_per_iters = result['loss_per_iters']
+iter_num_array = [(i + 1) * num_workers for i in range(len(loss_min_iters))]
 iter_num_array = [(i + 1) * num_workers for i in range(len(loss_min_iters))]
 
 plt.figure(2, figsize=(8, 5))
