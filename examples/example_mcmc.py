@@ -39,9 +39,7 @@ def log_prob_with_constraint(x):
 
 num_params = 2
 num_walkers = 20
-num_iters = 400
-# num_walkers = 100
-# num_iters = 1000
+num_iters = 200
 print('num of slurmpool calls should be', num_walkers / 2 * (num_iters + 1))
 
 # initial points chosen to satisfy constraint
@@ -98,7 +96,9 @@ plt.scatter(samples_flat[:, 0], samples_flat[:, 1], c='r', marker='o', s=10, alp
 plt.tight_layout()
 
 # plot analytic minima point for reference
-plt.plot(minima[0], minima[1], markersize=10, marker='*', markerfacecolor='w', markeredgecolor='k', lw=0)
+for markeredgecolor, markeredgewidth in zip(['k', 'w'], [3, 1]):
+    plt.plot(minima[0], minima[1], markersize=10, marker='*',
+             markerfacecolor='none', markeredgecolor=markeredgecolor, markeredgewidth=markeredgewidth)
 
 # plot constraint bound
 theta = np.linspace(0, 2 * np.pi, 100)
@@ -107,7 +107,7 @@ plt.tight_layout()
 
 # emcee corner plot
 import corner
-
 fig = plt.figure(num=3, figsize=(7, 7))
-corner.corner(samples_flat, labels=labels, color='k', truths=minima, truth_color='r', fig=fig)
+corner.corner(samples_flat, labels=labels, color='k', truths=minima, truth_color='r', fig=fig,
+              label_kwargs={"fontsize": 14}, labelpad=-0.1)
 plt.tight_layout()

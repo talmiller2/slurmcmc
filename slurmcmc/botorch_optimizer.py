@@ -15,7 +15,7 @@ warnings.filterwarnings("ignore", category=InputDataWarning)
 warnings.filterwarnings("ignore", category=OptimizationWarning)
 
 
-class BotorchOptimizer():
+class BoTorchOptimizer():
     def __init__(self, lower_bounds, upper_bounds, num_workers,
                  num_restarts=None, raw_samples=None, num_best_points=None):
         self.bounds_torch = torch.tensor([lower_bounds, upper_bounds], dtype=torch.float)

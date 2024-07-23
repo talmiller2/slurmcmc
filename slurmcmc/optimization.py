@@ -2,10 +2,10 @@ import logging
 
 import nevergrad as ng
 import numpy as np
-from slurmcmc.botorch_optimizer import BotorchOptimizer
+from slurmcmc.botorch_optimizer import BoTorchOptimizer
 from slurmcmc.general_utils import set_logging, save_restart_file, load_restart_file, combine_args
 from slurmcmc.slurm_utils import SlurmPool
-
+import time
 
 def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                    optimizer_package='nevergrad', optimizer_class=None, botorch_kwargs={},
@@ -51,8 +51,8 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
             optimizer = optimizer_class(parametrization=instrum, budget=budget, num_workers=num_workers)
         elif optimizer_package == 'botorch':
             if optimizer_class is None:
-                optimizer_class = BotorchOptimizer
-            optimizer = optimizer_class(lower_bounds, upper_bounds, num_workers, **botorch_kwargs)
+                optimizer_class = BoTorchOptimizer
+            optimizer = optimizer_class(lower_bounds, upper_bounds, num_workers, verbosity, **botorch_kwargs)
         else:
             raise ValueError('invalid optimizer_package:', optimizer_package)
 
@@ -102,7 +102,11 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                 elif optimizer_package == 'botorch':
                     x_pts = slurm_pool.points_history
                     y_pts = slurm_pool.values_history
+                    t_start_ask = time.time()
                     candidates_batch = optimizer.ask(x_pts, y_pts)
+                    t_end_ask = time.time()
+                    if verbosity >= 3:
+                        logging.info('    botorch ask run time: ' + '{:.1f}'.format(t_end_ask - t_start_ask) + 's.')
 
                 num_asks += 1
                 if num_asks > num_asks_max:

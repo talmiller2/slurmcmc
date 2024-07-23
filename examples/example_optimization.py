@@ -101,9 +101,8 @@ for ind_iter, pos in enumerate(history):
     plt.plot(pos[0], pos[1], marker='o', markersize=4, color=color_list[ind_iter], linewidth=0)
 
 # plot analytic minima point for reference
-# plt.plot(minima[0], minima[1], markersize=10, marker='*', markerfacecolor='w', markeredgecolor='k', lw=0)
-for markeredgecolor, markeredgewidth in zip(['k', 'w'], [4, 2]):
-    plt.plot(minima[0], minima[1], markersize=10, marker='o',
+for markeredgecolor, markeredgewidth in zip(['k', 'w'], [3, 1]):
+    plt.plot(minima[0], minima[1], markersize=10, marker='*',
              markerfacecolor='none', markeredgecolor=markeredgecolor, markeredgewidth=markeredgewidth)
 
 # plot constraint bound
