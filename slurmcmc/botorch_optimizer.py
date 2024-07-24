@@ -34,7 +34,7 @@ class BoTorchOptimizer():
 
     def ask(self, x_pts, y_pts):
 
-        if x_pts == []:  # initial iteration
+        if len(x_pts) == 0:  # initial iteration
             botorch_points = draw_sobol_samples(bounds=self.bounds_torch, n=1, q=self.num_workers).squeeze(0)
 
         else:

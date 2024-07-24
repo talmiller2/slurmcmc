@@ -5,12 +5,12 @@ Implemented by stitching together [``submitit``](https://github.com/facebookincu
 
 
 Install locally using
-```sh
+```
 pip install -e .
 ```
 
 Run tests from root project folder using:
-```sh
+```
 python -m unittest discover -s tests
 ```
 
