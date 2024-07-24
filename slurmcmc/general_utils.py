@@ -71,22 +71,25 @@ def combine_args(arg, extra_arg=None):
     return args
 
 
-def delete_directory_and_wait(path, timeout=10, check_interval=0.1):
+def delete_directory_and_wait(path, timeout=10, check_interval=0.1, retries=5):
     """
     Delete a directory and wait until it is really deleted.
     """
     if not os.path.isdir(path):
         return True
 
-    # Attempt to delete the directory
-    shutil.rmtree(path)
+    for ind_retry in range(retries):
 
-    # Wait until the directory is deleted or timeout is reached
-    start_time = time.time()
-    while os.path.isdir(path):
-        if time.time() - start_time > timeout:
-            print(f"Timeout reached. directory {path} could not be deleted.")
-            return False
-        time.sleep(check_interval)
+        # Attempt to delete the directory
+        shutil.rmtree(path)
+
+        # Wait until the directory is deleted or timeout is reached
+        start_time = time.time()
+        while os.path.isdir(path):
+            if time.time() - start_time > timeout:
+                print('Timeout reached. directory ' + path + ' could not be deleted '
+                                                             '(retry=' + str(ind_retry) + ').')
+                return False
+            time.sleep(check_interval)
 
     return True
