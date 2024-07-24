@@ -75,10 +75,11 @@ def delete_directory_and_wait(path, timeout=10, check_interval=0.1, retries=5):
     """
     Delete a directory and wait until it is really deleted.
     """
-    if not os.path.isdir(path):
-        return True
-
     for ind_retry in range(retries):
+
+        # If directory does not exist, then either did not exist or was previously deleted
+        if not os.path.isdir(path):
+            return True
 
         # Attempt to delete the directory
         shutil.rmtree(path)
