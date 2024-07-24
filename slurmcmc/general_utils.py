@@ -84,12 +84,20 @@ def delete_directory_with_retries(path, delay=1, retries=10):
         # Attempt to delete the directory
         try:
             shutil.rmtree(path)
+        except:
 
-        except OSError as e:
-            if e.errno == 16:  # Errno 16 is 'Device or resource busy'
-                print(f"Retrying ({ind_retry + 1}/{retries})... {e.strerror}")
-                time.sleep(delay)
-            else:
-                raise Exception(f"Failed to delete {path} after {retries} retries.") from e
+            try:
+                for root, dirs, files in os.walk(path, topdown=False):
+                    for name in files:
+                        os.remove(os.path.join(root, name))
+                    for name in dirs:
+                        os.rmdir(os.path.join(root, name))
+                os.rmdir(path)
+            except:
+                raise
 
-    return True
+        print(f"Retrying ({ind_retry + 1}/{retries})...")
+        time.sleep(delay)
+
+    print(f"Failed to delete {path} after {retries} retries.")
+    return False
