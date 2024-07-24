@@ -35,7 +35,7 @@ class BoTorchOptimizer():
     def ask(self, x_pts, y_pts):
 
         if len(x_pts) == 0:  # initial iteration
-            botorch_points = draw_sobol_samples(bounds=self.bounds_torch, n=1, q=self.num_workers).squeeze(0)
+            points_torch = draw_sobol_samples(bounds=self.bounds_torch, n=1, q=self.num_workers).squeeze(0)
 
         else:
             # trim the training data to the num_best_points of lowest loss_fun values
@@ -44,15 +44,16 @@ class BoTorchOptimizer():
                 x_pts = x_pts[indices_sorted[0:self.num_best_points]]
                 y_pts = y_pts[indices_sorted[0:self.num_best_points]]
 
-            x_torch = torch.tensor(x_pts, dtype=torch.float64)
+            x_torch = torch.tensor(x_pts, dtype=torch.float64) # botorch recommends float64
             y_torch = torch.tensor(y_pts[:, 0], dtype=torch.float64).unsqueeze(-1)
             y_torch *= -1  # botorch does maximization rather than minimization
             model = SingleTaskGP(x_torch, y_torch)
             mll = ExactMarginalLogLikelihood(model.likelihood, model)
             fit_gpytorch_mll(mll)
             acq_function = qExpectedImprovement(model=model, best_f=torch.max(y_torch))
-            botorch_points, _ = optimize_acqf(acq_function=acq_function, bounds=self.bounds_torch, q=self.num_workers,
+            points_torch, _ = optimize_acqf(acq_function=acq_function, bounds=self.bounds_torch, q=self.num_workers,
                                               num_restarts=self.num_restarts, raw_samples=self.raw_samples)
 
-        points = list(np.asarray(botorch_points))
+        points_torch = points_torch.to(torch.float64) # without this points are float32 which is not JSON serializable
+        points = points_torch.numpy() # convert to np.array
         return points
