@@ -71,7 +71,7 @@ def combine_args(arg, extra_arg=None):
     return args
 
 
-def delete_directory_with_retries(path, delay=1, retries=5):
+def delete_directory_with_retries(path, delay=1, retries=10):
     """
     Delete a directory with multiple retries.
     """
@@ -89,5 +89,7 @@ def delete_directory_with_retries(path, delay=1, retries=5):
             if e.errno == 16:  # Errno 16 is 'Device or resource busy'
                 print(f"Retrying ({ind_retry + 1}/{retries})... {e.strerror}")
                 time.sleep(delay)
+            else:
+                raise Exception(f"Failed to delete {path} after {retries} retries.") from e
 
     return True

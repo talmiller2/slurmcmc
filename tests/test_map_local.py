@@ -22,7 +22,6 @@ def fun_that_writes_file(x):
 class test_map_local(unittest.TestCase):
     def setUp(self):
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
-        self.work_dir += '_' + str(np.random.randint(1e3))
         self.verbosity = 1
 
     def tearDown(self):
