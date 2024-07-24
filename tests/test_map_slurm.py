@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from slurmcmc.general_utils import delete_directory_and_wait
+from slurmcmc.general_utils import delete_directory_with_retries
 from slurmcmc.slurm_utils import SlurmPool
 
 
@@ -10,7 +10,7 @@ class test_map_slurm(unittest.TestCase):
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
 
     def tearDown(self):
-        self.assertTrue(delete_directory_and_wait(self.work_dir))
+        self.assertTrue(delete_directory_with_retries(self.work_dir))
 
     def test_slurmpool_slurm(self):
         slurm_pool = SlurmPool(self.work_dir, job_name='test_slurmpool',

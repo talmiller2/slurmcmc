@@ -71,9 +71,9 @@ def combine_args(arg, extra_arg=None):
     return args
 
 
-def delete_directory_and_wait(path, timeout=10, check_interval=0.1, retries=5):
+def delete_directory_with_retries(path, delay=1, retries=5):
     """
-    Delete a directory and wait until it is really deleted.
+    Delete a directory with multiple retries.
     """
     for ind_retry in range(retries):
 
@@ -82,15 +82,12 @@ def delete_directory_and_wait(path, timeout=10, check_interval=0.1, retries=5):
             return True
 
         # Attempt to delete the directory
-        shutil.rmtree(path)
+        try:
+            shutil.rmtree(path)
 
-        # Wait until the directory is deleted or timeout is reached
-        start_time = time.time()
-        while os.path.isdir(path):
-            if time.time() - start_time > timeout:
-                print('Timeout reached. directory ' + path + ' could not be deleted '
-                                                             '(retry=' + str(ind_retry) + ').')
-                return False
-            time.sleep(check_interval)
+        except OSError as e:
+            if e.errno == 16:  # Errno 16 is 'Device or resource busy'
+                print(f"Retrying ({ind_retry + 1}/{retries})... {e.strerror}")
+                time.sleep(delay)
 
     return True
