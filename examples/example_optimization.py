@@ -43,7 +43,7 @@ def loss_fun_with_constraint(x):
         return loss_fun(x)
 
 num_workers = 10
-num_iters = 30
+num_iters = 20
 
 ## define the optimization algorithm
 
@@ -58,8 +58,8 @@ optimizer_class = ng.optimizers.DifferentialEvolution(crossover="twopoints", pop
 # (see https://botorch.org/tutorials/closed_loop_botorch_only)
 # optimizer_package = 'botorch'
 # optimizer_class = None
-botorch_kwargs = {}
-# botorch_kwargs = {'num_restarts': 5, 'raw_samples': 5}
+# botorch_kwargs = {}
+# botorch_kwargs = {'num_restarts': 5, 'raw_samples': 5, 'num_best_points': None}
 
 time_start = time.time()
 result = slurm_minimize(
@@ -71,7 +71,7 @@ result = slurm_minimize(
     verbosity=3,
     optimizer_package=optimizer_package,
     optimizer_class=optimizer_class,
-    botorch_kwargs=botorch_kwargs,
+    # botorch_kwargs=botorch_kwargs,
 )
 time_end = time.time()
 

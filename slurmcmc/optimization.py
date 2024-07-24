@@ -1,11 +1,13 @@
 import logging
+import time
 
 import nevergrad as ng
 import numpy as np
+
 from slurmcmc.botorch_optimizer import BoTorchOptimizer
 from slurmcmc.general_utils import set_logging, save_restart_file, load_restart_file, combine_args
 from slurmcmc.slurm_utils import SlurmPool
-import time
+
 
 def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                    optimizer_package='nevergrad', optimizer_class=None, botorch_kwargs={},
@@ -26,6 +28,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
 
             status = load_restart_file(work_dir, restart_file)
             optimizer = status['optimizer']
+            x_min = status['x_min']
             loss_min = status['loss_min']
             loss_min_iters = status['loss_min_iters']
             loss_per_iters = status['loss_per_iters']
@@ -52,7 +55,13 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         elif optimizer_package == 'botorch':
             if optimizer_class is None:
                 optimizer_class = BoTorchOptimizer
-            optimizer = optimizer_class(lower_bounds, upper_bounds, num_workers, verbosity, **botorch_kwargs)
+
+            botorch_defaults = {'num_restarts': 10, 'raw_samples': 100, 'num_best_points': None}
+            for key, value in botorch_defaults.items():
+                if key not in botorch_kwargs:
+                    botorch_kwargs[key] = value
+
+            optimizer = optimizer_class(lower_bounds, upper_bounds, num_workers, **botorch_kwargs)
         else:
             raise ValueError('invalid optimizer_package:', optimizer_package)
 
@@ -110,7 +119,8 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
 
                 num_asks += 1
                 if num_asks > num_asks_max:
-                    raise ValueError('num_asks exceeded num_asks_max, having trouble finding satisfactory candidates.')
+                    raise ValueError('num_asks exceeded num_asks_max=', num_asks_max,
+                                     ', having trouble finding candidates that pass constraints.')
 
                 for candidate in candidates_batch:
                     candidate_tuple = tuple(candidate)
@@ -130,7 +140,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                                 break
 
             if verbosity >= 3:
-                logging.info('    optimizer.ask was called ' + str(num_asks) + ' times')
+                logging.info('    optimizer.ask was called ' + str(num_asks) + ' times.')
             num_asks_total += num_asks
 
         # calculate loss_fun on current iteration candidates
