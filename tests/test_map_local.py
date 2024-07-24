@@ -1,11 +1,9 @@
 import os
-import shutil
-import time
 import unittest
 
 import numpy as np
 
-from slurmcmc.general_utils import print_log
+from slurmcmc.general_utils import print_log, delete_directory_and_wait
 from slurmcmc.slurm_utils import SlurmPool
 
 
@@ -27,9 +25,7 @@ class test_map_local(unittest.TestCase):
         self.verbosity = 1
 
     def tearDown(self):
-        if os.path.isdir(self.work_dir):
-            shutil.rmtree(self.work_dir)
-        pass
+        self.assertTrue(delete_directory_and_wait(self.work_dir))
 
     def test_slurmpool_local_map(self):
         slurm_pool = SlurmPool(self.work_dir, cluster='local-map', verbosity=self.verbosity)
@@ -112,14 +108,12 @@ class test_map_local(unittest.TestCase):
         self.assertEqual(res, res_expected)
 
     def test_slurmpool_local_2params_with_log_file(self):
-        time.sleep(1)  # needed fix to work on some computers
         slurm_pool = SlurmPool(self.work_dir, cluster='local', verbosity=self.verbosity, log_file='log_file.txt')
         fun = lambda x: x[0] ** 2 + x[1] ** 2
         points = [[2, 3], [3, 4], [4, 5]]
         slurm_pool.map(fun, points)
 
     def test_slurmpool_local_2params_check_query_dir(self):
-        time.sleep(1)  # needed fix to work on some computers
         slurm_pool = SlurmPool(self.work_dir, cluster='local', verbosity=self.verbosity)
         points = [[2, 3], [3, 4], [4, 5]]
         slurm_pool.map(fun_that_writes_file, points)

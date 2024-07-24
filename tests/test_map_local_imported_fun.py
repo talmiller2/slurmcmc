@@ -1,14 +1,14 @@
 import os
-import shutil
 import unittest
 
+from slurmcmc.general_utils import delete_directory_and_wait
 from slurmcmc.import_utils import import_function_from_module, imported_fun
 from slurmcmc.slurm_utils import SlurmPool
 
 
 class test_map_local_imported_fun(unittest.TestCase):
     def setUp(self):
-        os.chdir(os.path.dirname(__file__)) # needed to make tests not crash on a cluster
+        os.chdir(os.path.dirname(__file__))  # needed to make tests not crash on a cluster
 
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
         self.verbosity = 1
@@ -23,9 +23,7 @@ class test_map_local_imported_fun(unittest.TestCase):
                                                               self.module_dict['function_name'])
 
     def tearDown(self):
-        if os.path.isdir(self.work_dir):
-            shutil.rmtree(self.work_dir)
-        pass
+        self.assertTrue(delete_directory_and_wait(self.work_dir))
 
     def test_slurmpool_local_imported_fun_fail(self):
         """

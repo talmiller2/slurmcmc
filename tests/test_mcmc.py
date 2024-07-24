@@ -1,12 +1,13 @@
 import os
-import shutil
 import unittest
 
-import emcee
 import numpy as np
 from scipy.optimize import rosen
-from slurmcmc.mcmc import slurm_mcmc
+
+from slurmcmc.general_utils import delete_directory_and_wait
 from slurmcmc.general_utils import load_restart_file
+from slurmcmc.mcmc import slurm_mcmc
+
 
 def log_prob_fun(x):
     return -rosen(x)
@@ -19,9 +20,7 @@ class test_mcmc(unittest.TestCase):
         self.verbosity = 1
 
     def tearDown(self):
-        if os.path.isdir(self.work_dir):
-            shutil.rmtree(self.work_dir)
-        pass
+        self.assertTrue(delete_directory_and_wait(self.work_dir))
 
     def test_slurm_mcmc(self):
         num_params = 2
@@ -105,6 +104,7 @@ class test_mcmc(unittest.TestCase):
         self.assertEqual(len(sampler_2.pool.points_history), total_num_points_calc)
         restart_2 = load_restart_file(self.work_dir, restart_file='mcmc_restart.pkl')
         self.assertEqual(restart_2['ini_iter'], 2 * num_iters)
+
 
 if __name__ == '__main__':
     unittest.main()

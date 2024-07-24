@@ -1,6 +1,8 @@
 import logging
 import os
 import pickle
+import shutil
+import time
 
 
 def set_logging(work_dir=None, log_file=None):
@@ -67,3 +69,24 @@ def combine_args(arg, extra_arg=None):
     if extra_arg is not None:
         args += [extra_arg]
     return args
+
+
+def delete_directory_and_wait(path, timeout=10, check_interval=0.1):
+    """
+    Delete a directory and wait until it is really deleted.
+    """
+    if not os.path.isdir(path):
+        return True
+
+    # Attempt to delete the directory
+    shutil.rmtree(path)
+
+    # Wait until the directory is deleted or timeout is reached
+    start_time = time.time()
+    while os.path.isdir(path):
+        if time.time() - start_time > timeout:
+            print(f"Timeout reached. directory {path} could not be deleted.")
+            return False
+        time.sleep(check_interval)
+
+    return True

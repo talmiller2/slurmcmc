@@ -1,10 +1,11 @@
 import os
-import shutil
 import unittest
 
 import numpy as np
 import torch
 from scipy.optimize import rosen
+
+from slurmcmc.general_utils import delete_directory_and_wait
 from slurmcmc.optimization import slurm_minimize
 
 
@@ -56,9 +57,7 @@ class test_minimize(unittest.TestCase):
         self.verbosity = 1
 
     def tearDown(self):
-        if os.path.isdir(self.work_dir):
-            shutil.rmtree(self.work_dir)
-        pass
+        self.assertTrue(delete_directory_and_wait(self.work_dir))
 
     def test_slurm_minimize_1param(self):
         num_params = 1
