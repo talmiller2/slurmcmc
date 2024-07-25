@@ -63,4 +63,4 @@ def combine_args(arg, extra_arg=None):
 
 def delete_directory(dir_path):
     if os.path.isdir(dir_path):
-        shutil.rmtree(dir_path)
+        shutil.rmtree(dir_path, ignore_errors=True)
