@@ -8,7 +8,6 @@ from scipy.optimize import rosen
 from slurmcmc.general_utils import delete_directory
 from slurmcmc.optimization import slurm_minimize
 
-
 def loss_fun_1d(x):
     return (x - 1) ** 2
 
@@ -51,14 +50,13 @@ def constraint_fun_with_extra_arg(x, extra_arg):
 class test_minimize(unittest.TestCase):
 
     def setUp(self):
-        self.dir_seed = np.random.randint(1e4)
         np.random.seed(0)
         torch.manual_seed(0)
-        self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
+        self.work_dir = os.path.dirname(__file__) + '/test_work_dir_' + self._testMethodName
         self.verbosity = 1
 
     def tearDown(self):
-        self.assertTrue(delete_directory(self.work_dir, self.dir_seed))
+        delete_directory(self.work_dir)
 
     def test_slurm_minimize_1param(self):
         num_params = 1
