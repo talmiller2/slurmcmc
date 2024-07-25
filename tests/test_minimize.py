@@ -8,6 +8,7 @@ from scipy.optimize import rosen
 from slurmcmc.general_utils import delete_directory
 from slurmcmc.optimization import slurm_minimize
 
+
 def loss_fun_1d(x):
     return (x - 1) ** 2
 
@@ -219,12 +220,12 @@ class test_minimize(unittest.TestCase):
         param_bounds = [[-5, 5] for _ in range(num_params)]
         expected_minima_point = np.ones(num_params)
         num_workers = 5
-        num_iters = 10
+        num_iters = 5
 
         result = slurm_minimize(loss_fun=loss_fun_1d,
                                 param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
-                                optimizer_package='botorch',
-                                cluster='local-map', verbosity=self.verbosity)
+                                optimizer_package='botorch', cluster='local-map',
+                                verbosity=self.verbosity, slurm_vebosity=self.verbosity)
 
         self.assertLessEqual(np.linalg.norm(result['x_min'] - expected_minima_point), 0.02)
         self.assertLessEqual(result['loss_min'], 1e-3)

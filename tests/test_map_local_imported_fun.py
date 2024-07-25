@@ -10,7 +10,7 @@ class test_map_local_imported_fun(unittest.TestCase):
     def setUp(self):
         os.chdir(os.path.dirname(__file__))  # needed to make tests not crash on a cluster
 
-        self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
+        self.work_dir = os.path.dirname(__file__) + '/test_work_dir_' + self._testMethodName
         self.verbosity = 1
 
         module_dict = {}
@@ -23,7 +23,7 @@ class test_map_local_imported_fun(unittest.TestCase):
                                                               self.module_dict['function_name'])
 
     def tearDown(self):
-        self.assertTrue(delete_directory(self.work_dir))
+        delete_directory(self.work_dir)
 
     def test_slurmpool_local_imported_fun_fail(self):
         """

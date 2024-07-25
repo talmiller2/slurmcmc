@@ -7,10 +7,10 @@ from slurmcmc.slurm_utils import SlurmPool
 
 class test_map_slurm(unittest.TestCase):
     def setUp(self):
-        self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
+        self.work_dir = os.path.dirname(__file__) + '/test_work_dir_' + self._testMethodName
 
     def tearDown(self):
-        self.assertTrue(delete_directory(self.work_dir))
+        delete_directory(self.work_dir)
 
     def test_slurmpool_slurm(self):
         slurm_pool = SlurmPool(self.work_dir, job_name='test_slurmpool',

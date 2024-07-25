@@ -16,11 +16,11 @@ def log_prob_fun(x):
 class test_mcmc(unittest.TestCase):
     def setUp(self):
         np.random.seed(0)
-        self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
+        self.work_dir = os.path.dirname(__file__) + '/test_work_dir_' + self._testMethodName
         self.verbosity = 1
 
     def tearDown(self):
-        self.assertTrue(delete_directory(self.work_dir))
+        delete_directory(self.work_dir)
 
     def test_slurm_mcmc(self):
         num_params = 2

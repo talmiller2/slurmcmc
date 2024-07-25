@@ -1,10 +1,7 @@
 import logging
 import os
 import pickle
-import re
 import shutil
-
-import numpy as np
 
 
 def set_logging(work_dir=None, log_file=None):
@@ -45,15 +42,6 @@ def set_logging(work_dir=None, log_file=None):
     return
 
 
-def print_log(string, work_dir, log_file):
-    if log_file is None:
-        print(string)
-    else:
-        os.makedirs(work_dir, exist_ok=True)
-        with open(work_dir + '/' + log_file, 'a') as log_file:
-            print(string, file=log_file)
-
-
 def save_restart_file(status, work_dir, restart_file):
     os.makedirs(work_dir, exist_ok=True)
     with open(work_dir + '/' + restart_file, 'wb') as f:
@@ -71,36 +59,6 @@ def combine_args(arg, extra_arg=None):
     if extra_arg is not None:
         args += [extra_arg]
     return args
-
-
-# def delete_directory(dir_path):
-#     """
-#     Delete a directory by first changing its name.
-#     """
-#
-#     # if directory does not exist, then either did not exist or was previously deleted
-#     if not os.path.isdir(dir_path):
-#         return True
-#
-#     # replace multiple slashes with a single one
-#     cleaned_path = re.sub(r'/+', '/', dir_path)
-#
-#     # remove the last slash if it exists
-#     if cleaned_path.endswith('/') and cleaned_path != '/':
-#         cleaned_path = cleaned_path.rstrip('/')
-#
-#     # select new random name for the directory and rename it
-#     new_dir_path = cleaned_path + '_' + str(np.random.randint(1e4))
-#     os.rename(dir_path, new_dir_path)
-#
-#     # delete dir
-#     shutil.rmtree(new_dir_path)
-#
-#     if not os.path.isdir(dir_path):
-#         return True
-#     else:
-#         return False
-#
 
 
 def delete_directory(dir_path):

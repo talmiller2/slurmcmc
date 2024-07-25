@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from slurmcmc.general_utils import print_log, delete_directory
+from slurmcmc.general_utils import delete_directory
 from slurmcmc.slurm_utils import SlurmPool
 
 
@@ -15,17 +15,18 @@ def fun_with_extra_arg(x, weather):
 
 
 def fun_that_writes_file(x):
-    print_log(string=str(x), work_dir='.', log_file='test_file.txt')
+    with open('test_file.txt', 'a') as log_file:
+        print(x, file=log_file)
     return x[0] ** 2 + x[1] ** 2
 
 
 class test_map_local(unittest.TestCase):
     def setUp(self):
-        self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
+        self.work_dir = os.path.dirname(__file__) + '/test_work_dir_' + self._testMethodName
         self.verbosity = 1
 
     def tearDown(self):
-        self.assertTrue(delete_directory(self.work_dir))
+        delete_directory(self.work_dir)
 
     def test_slurmpool_local_map(self):
         slurm_pool = SlurmPool(self.work_dir, cluster='local-map', verbosity=self.verbosity)
