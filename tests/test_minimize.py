@@ -51,13 +51,14 @@ def constraint_fun_with_extra_arg(x, extra_arg):
 class test_minimize(unittest.TestCase):
 
     def setUp(self):
+        self.dir_seed = np.random.randint(1e4)
         np.random.seed(0)
         torch.manual_seed(0)
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir'
         self.verbosity = 1
 
     def tearDown(self):
-        self.assertTrue(delete_directory(self.work_dir))
+        self.assertTrue(delete_directory(self.work_dir, self.dir_seed))
 
     def test_slurm_minimize_1param(self):
         num_params = 1

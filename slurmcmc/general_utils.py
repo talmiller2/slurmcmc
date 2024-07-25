@@ -73,7 +73,7 @@ def combine_args(arg, extra_arg=None):
     return args
 
 
-def delete_directory(dir_path, delay=1, retries=10):
+def delete_directory(dir_path, seed=0):
     """
     Delete a directory by first changing its name.
     """
@@ -90,6 +90,7 @@ def delete_directory(dir_path, delay=1, retries=10):
         cleaned_path = cleaned_path.rstrip('/')
 
     # select new random name for the directory and rename it
+    np.random.seed(seed)
     new_dir_path = cleaned_path + '_' + str(np.random.randint(1e4))
     os.rename(dir_path, new_dir_path)
 
