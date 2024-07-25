@@ -190,4 +190,6 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
     if verbosity >= 1:
         logging.info('### opt loop done. x_min: ' + str(x_min) + ', loss_min: ' + str(loss_min))
 
+    logging.shutdown()
+
     return status
