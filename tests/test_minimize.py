@@ -179,7 +179,7 @@ class test_minimize(unittest.TestCase):
         result = slurm_minimize(loss_fun=loss_fun,
                                 param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
                                 cluster='local-map',
-                                verbosity=self.verbosity, slurm_vebosity=self.verbosity,
+                                verbosity=self.verbosity,
                                 work_dir=self.work_dir, log_file='log_file.txt')
 
         self.assertTrue(os.path.isfile(self.work_dir + '/log_file.txt'), 'log_file was not created.')
@@ -196,7 +196,7 @@ class test_minimize(unittest.TestCase):
                                     extra_arg=None,  # extra_arg not supplied and therefore should fail
                                     param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
                                     cluster='local-map',
-                                    verbosity=self.verbosity, slurm_vebosity=self.verbosity,
+                                    verbosity=self.verbosity,
                                     work_dir=self.work_dir)
 
     def test_slurm_minimize_2params_with_constraint_and_with_extra_arg(self):
@@ -210,7 +210,7 @@ class test_minimize(unittest.TestCase):
                                 extra_arg='sunny',
                                 param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
                                 cluster='local-map',
-                                verbosity=self.verbosity, slurm_vebosity=self.verbosity,
+                                verbosity=self.verbosity,
                                 work_dir=self.work_dir)
         self.assertLessEqual(np.linalg.norm(result['x_min'] - expected_minima_point), 0.5)
         self.assertLessEqual(result['loss_min'], 0.05)
@@ -220,15 +220,44 @@ class test_minimize(unittest.TestCase):
         param_bounds = [[-5, 5] for _ in range(num_params)]
         expected_minima_point = np.ones(num_params)
         num_workers = 5
-        num_iters = 5
+        num_iters = 8
 
         result = slurm_minimize(loss_fun=loss_fun_1d,
                                 param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
                                 optimizer_package='botorch', cluster='local-map',
-                                verbosity=self.verbosity, slurm_vebosity=self.verbosity)
+                                verbosity=self.verbosity)
 
         self.assertLessEqual(np.linalg.norm(result['x_min'] - expected_minima_point), 0.02)
         self.assertLessEqual(result['loss_min'], 1e-3)
+
+
+    def test_slurm_minimize_1param_botorch_with_restart(self):
+        num_params = 1
+        param_bounds = [[-5, 5] for _ in range(num_params)]
+        num_workers = 5
+        num_iters = 4
+
+        # run and save restart
+        res_1 = slurm_minimize(loss_fun=loss_fun_1d,
+                               param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                               optimizer_package='botorch', cluster='local-map', verbosity=self.verbosity,
+                               work_dir=self.work_dir, save_restart=True, load_restart=False,
+                               )
+        self.assertEqual(res_1['slurm_pool'].num_calls, num_iters)
+        self.assertEqual(len(res_1['slurm_pool'].points_history), num_iters * num_workers)
+        self.assertEqual(res_1['ini_iter'], num_iters)
+        self.assertGreaterEqual(res_1['loss_min'], 1e-3) # loss not yet low enough with few iterations
+
+        # run again from previous restart
+        res_2 = slurm_minimize(loss_fun=loss_fun_1d,
+                               param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                               optimizer_package='botorch', cluster='local-map', verbosity=self.verbosity,
+                               work_dir=self.work_dir, save_restart=True, load_restart=True,
+                               )
+        self.assertEqual(res_2['slurm_pool'].num_calls, 2 * num_iters)
+        self.assertEqual(len(res_2['slurm_pool'].points_history), 2 * num_iters * num_workers)
+        self.assertEqual(res_2['ini_iter'], 2 * num_iters)
+        self.assertLessEqual(res_2['loss_min'], 1e-3)  # loss now low enough because of additional iterations
 
 
 if __name__ == '__main__':
