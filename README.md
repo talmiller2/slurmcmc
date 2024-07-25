@@ -11,7 +11,7 @@ pip install -e .
 
 Run tests from root project folder using:
 ```
-python -m unittest discover -s tests
+python -m unittest discover -v -s tests
 ```
 
 Quick how to use in the examples folder.
