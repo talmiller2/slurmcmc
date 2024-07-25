@@ -1,8 +1,10 @@
 import logging
 import os
 import pickle
+import re
 import shutil
-import time
+
+import numpy as np
 
 
 def set_logging(work_dir=None, log_file=None):
@@ -71,33 +73,30 @@ def combine_args(arg, extra_arg=None):
     return args
 
 
-def delete_directory_with_retries(path, delay=1, retries=10):
+def delete_directory(dir_path, delay=1, retries=10):
     """
-    Delete a directory with multiple retries.
+    Delete a directory by first changing its name.
     """
-    for ind_retry in range(retries):
 
-        # If directory does not exist, then either did not exist or was previously deleted
-        if not os.path.isdir(path):
-            return True
+    # if directory does not exist, then either did not exist or was previously deleted
+    if not os.path.isdir(dir_path):
+        return True
 
-        # Attempt to delete the directory
-        try:
-            shutil.rmtree(path)
-        except:
+    # replace multiple slashes with a single one
+    cleaned_path = re.sub(r'/+', '/', dir_path)
 
-            try:
-                for root, dirs, files in os.walk(path, topdown=False):
-                    for name in files:
-                        os.remove(os.path.join(root, name))
-                    for name in dirs:
-                        os.rmdir(os.path.join(root, name))
-                os.rmdir(path)
-            except:
-                raise
+    # remove the last slash if it exists
+    if cleaned_path.endswith('/') and cleaned_path != '/':
+        cleaned_path = cleaned_path.rstrip('/')
 
-        print(f"Retrying ({ind_retry + 1}/{retries})...")
-        time.sleep(delay)
+    # select new random name for the directory and rename it
+    new_dir_path = cleaned_path + '_' + str(np.random.randint(1e4))
+    os.rename(dir_path, new_dir_path)
 
-    print(f"Failed to delete {path} after {retries} retries.")
-    return False
+    # delete dir
+    shutil.rmtree(new_dir_path)
+
+    if not os.path.isdir(dir_path):
+        return True
+    else:
+        return False

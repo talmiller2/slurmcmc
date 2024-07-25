@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from scipy.optimize import rosen
 
-from slurmcmc.general_utils import delete_directory_with_retries
+from slurmcmc.general_utils import delete_directory
 from slurmcmc.optimization import slurm_minimize
 
 
@@ -57,7 +57,7 @@ class test_minimize(unittest.TestCase):
         self.verbosity = 1
 
     def tearDown(self):
-        self.assertTrue(delete_directory_with_retries(self.work_dir))
+        self.assertTrue(delete_directory(self.work_dir))
 
     def test_slurm_minimize_1param(self):
         num_params = 1

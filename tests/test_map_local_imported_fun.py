@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from slurmcmc.general_utils import delete_directory_with_retries
+from slurmcmc.general_utils import delete_directory
 from slurmcmc.import_utils import import_function_from_module, imported_fun
 from slurmcmc.slurm_utils import SlurmPool
 
@@ -23,7 +23,7 @@ class test_map_local_imported_fun(unittest.TestCase):
                                                               self.module_dict['function_name'])
 
     def tearDown(self):
-        self.assertTrue(delete_directory_with_retries(self.work_dir))
+        self.assertTrue(delete_directory(self.work_dir))
 
     def test_slurmpool_local_imported_fun_fail(self):
         """

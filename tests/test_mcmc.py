@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 from scipy.optimize import rosen
 
-from slurmcmc.general_utils import delete_directory_with_retries
+from slurmcmc.general_utils import delete_directory
 from slurmcmc.general_utils import load_restart_file
 from slurmcmc.mcmc import slurm_mcmc
 
@@ -20,7 +20,7 @@ class test_mcmc(unittest.TestCase):
         self.verbosity = 1
 
     def tearDown(self):
-        self.assertTrue(delete_directory_with_retries(self.work_dir))
+        self.assertTrue(delete_directory(self.work_dir))
 
     def test_slurm_mcmc(self):
         num_params = 2

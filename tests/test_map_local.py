@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from slurmcmc.general_utils import print_log, delete_directory_with_retries
+from slurmcmc.general_utils import print_log, delete_directory
 from slurmcmc.slurm_utils import SlurmPool
 
 
@@ -25,7 +25,7 @@ class test_map_local(unittest.TestCase):
         self.verbosity = 1
 
     def tearDown(self):
-        self.assertTrue(delete_directory_with_retries(self.work_dir))
+        self.assertTrue(delete_directory(self.work_dir))
 
     def test_slurmpool_local_map(self):
         slurm_pool = SlurmPool(self.work_dir, cluster='local-map', verbosity=self.verbosity)
