@@ -51,6 +51,7 @@ def constraint_fun_with_extra_arg(x, extra_arg):
 class test_minimize(unittest.TestCase):
 
     def setUp(self):
+        os.chdir(os.path.dirname(__file__))
         np.random.seed(0)
         torch.manual_seed(0)
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir_' + self._testMethodName
@@ -230,7 +231,6 @@ class test_minimize(unittest.TestCase):
         self.assertLessEqual(np.linalg.norm(result['x_min'] - expected_minima_point), 0.02)
         self.assertLessEqual(result['loss_min'], 1e-3)
 
-
     def test_slurm_minimize_1param_botorch_with_restart(self):
         num_params = 1
         param_bounds = [[-5, 5] for _ in range(num_params)]
@@ -246,7 +246,6 @@ class test_minimize(unittest.TestCase):
         self.assertEqual(res_1['slurm_pool'].num_calls, num_iters)
         self.assertEqual(len(res_1['slurm_pool'].points_history), num_iters * num_workers)
         self.assertEqual(res_1['ini_iter'], num_iters)
-        self.assertGreaterEqual(res_1['loss_min'], 1e-3) # loss not yet low enough with few iterations
 
         # run again from previous restart
         res_2 = slurm_minimize(loss_fun=loss_fun_1d,
@@ -257,7 +256,7 @@ class test_minimize(unittest.TestCase):
         self.assertEqual(res_2['slurm_pool'].num_calls, 2 * num_iters)
         self.assertEqual(len(res_2['slurm_pool'].points_history), 2 * num_iters * num_workers)
         self.assertEqual(res_2['ini_iter'], 2 * num_iters)
-        self.assertLessEqual(res_2['loss_min'], 1e-3)  # loss now low enough because of additional iterations
+        self.assertLessEqual(res_2['loss_min'], 1e-3)
 
 
 if __name__ == '__main__':

@@ -22,6 +22,7 @@ def fun_that_writes_file(x):
 
 class test_map_local(unittest.TestCase):
     def setUp(self):
+        os.chdir(os.path.dirname(__file__))
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir_' + self._testMethodName
         self.verbosity = 1
 
