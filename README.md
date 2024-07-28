@@ -11,12 +11,12 @@ pip install -e .
 
 Run tests from root project folder using:
 ```
-cd tests; python run_all_tests.py
+pytest tests
 ```
 
 Run a specific test
 ```
-python -m unittest <test_module>.<TestClass>.<test_method>
+pytest tests/test_file.py::TestClassName::test_method_name
 ```
 
 Quick how to use in the examples folder.
