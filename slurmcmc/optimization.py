@@ -29,9 +29,11 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
             status = load_restart_file(work_dir, restart_file)
             optimizer = status['optimizer']
             x_min = status['x_min']
-            loss_min_per_iter = status['loss_best_per_iter']
+            loss_min_per_iter = status['loss_min_per_iter']
             loss_min_all_iter = status['loss_min_all_iter']
             loss_min = status['loss_min']
+            loc_point_min_per_iter = status['loc_point_min_per_iter']
+            loc_point_min_all_iter = status['loc_point_min_all_iter']
             slurm_pool = status['slurm_pool']
             ini_iter = status['ini_iter']
             num_loss_fun_calls_total = status['num_loss_fun_calls_total']
@@ -75,6 +77,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         loss_min_per_iter = []
         loss_min_all_iter = []
         loss_min = np.inf
+        loc_point_min_per_iter = []
 
     ## start optimization iterations
     for curr_iter in range(ini_iter, ini_iter + num_iters):
@@ -156,13 +159,16 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
             pass
 
         # evaluate optimization metrics post current iteration
-        ind_curr_min = np.nanargmin(results)
-        curr_x_min, curr_loss_min = candidates[ind_curr_min], results[ind_curr_min]
-        if curr_loss_min < loss_min:
-            loss_min = curr_loss_min
-            x_min = curr_x_min
+        ind_curr_iter_min = np.nanargmin(results)
+        curr_iter_x_min, curr_iter_loss_min = candidates[ind_curr_iter_min], results[ind_curr_iter_min]
+        curr_iter_loc_point_min = (curr_iter, ind_curr_iter_min)
+        if curr_iter_loss_min < loss_min:
+            loss_min = curr_iter_loss_min
+            x_min = curr_iter_x_min
+            loc_point_min_all_iter = curr_iter_loc_point_min
         loss_min_all_iter += [loss_min]
-        loss_min_per_iter += [curr_loss_min]
+        loss_min_per_iter += [curr_iter_loss_min]
+        loc_point_min_per_iter += [curr_iter_loc_point_min]
 
         if verbosity >= 2:
             logging.info('    curr best: x_min: ' + str(x_min) + ', loss_min: ' + str(loss_min))
@@ -174,6 +180,8 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         status['loss_min_per_iter'] = loss_min_per_iter
         status['loss_min_all_iter'] = loss_min_all_iter
         status['loss_min'] = loss_min
+        status['loc_point_min_per_iter'] = loc_point_min_per_iter
+        status['loc_point_min_all_iter'] = loc_point_min_all_iter
         status['slurm_pool'] = slurm_pool
         status['ini_iter'] = curr_iter + 1
         status['num_loss_fun_calls_total'] = num_loss_fun_calls_total
