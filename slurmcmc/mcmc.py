@@ -19,7 +19,8 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=False,
 
     if load_restart:
         if verbosity >= 1:
-            logging.info('loading restart file.')
+            logging.info('loading restart file: ' + work_dir + '/' + restart_file)
+
             status = load_restart_file(work_dir, restart_file)
             initial_state = status['state']
             sampler = status['sampler']
@@ -44,7 +45,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=False,
 
         if save_restart:
             if verbosity >= 3:
-                logging.info('    saving restart.')
+                logging.info('    saving restart file: ' + work_dir + '/' + restart_file)
             status = {'state': state, 'sampler': sampler, 'slurm_pool': slurm_pool, 'ini_iter': curr_iter + 1}
             save_restart_file(status, work_dir, restart_file)
             sampler.pool = slurm_pool  # need to redefine the pool becuase pickling removes sampler.pool

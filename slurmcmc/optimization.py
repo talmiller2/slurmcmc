@@ -24,7 +24,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
 
     if load_restart:
         if verbosity >= 1:
-            logging.info('loading restart file.')
+            logging.info('loading restart file: ' + work_dir + '/' + restart_file)
 
             status = load_restart_file(work_dir, restart_file)
             optimizer = status['optimizer']
@@ -183,7 +183,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
 
         if save_restart:
             if verbosity >= 3:
-                logging.info('    saving restart.')
+                logging.info('    saving restart file: ' + work_dir + '/' + restart_file)
 
             save_restart_file(status, work_dir, restart_file)
 
