@@ -32,6 +32,7 @@ def set_logging(work_dir=None, log_file=None):
         ch.setLevel(logging.INFO)
         logger.addHandler(ch)
 
+        logging.info('setting log_file: ' + log_file_path)
     else:
         # print log messages to the console/terminal only
         logging.basicConfig(format='%(message)s', level=logging.DEBUG)
