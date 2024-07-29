@@ -40,6 +40,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
             num_constraint_fun_calls_total = status['num_constraint_fun_calls_total']
             num_asks_total = status['num_asks_total']
             evaluated_points = status['evaluated_points']
+            candidates_ask_time_per_iter = status['candidates_ask_time_per_iter']
 
     else:
         # param_bounds is a list (length num_params) that contains the lower and upper bounds per parameter
@@ -78,6 +79,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         loss_min_all_iter = []
         loss_min = np.inf
         loc_point_min_per_iter = []
+        candidates_ask_time_per_iter = []
 
     ## start optimization iterations
     for curr_iter in range(ini_iter, ini_iter + num_iters):
@@ -85,6 +87,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
             logging.info('### curr opt iter: ' + str(curr_iter))
 
         # ask for points for current iteration
+        t_start_ask_curr_iter = time.time()
         if curr_iter == 0 and init_points is not None:
             candidates = init_points
             candidates_nevergrad = []
@@ -146,6 +149,9 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                 logging.info('    optimizer.ask was called ' + str(num_asks) + ' times.')
             num_asks_total += num_asks
 
+            t_end_ask_curr_iter = time.time()
+            candidates_ask_time_per_iter += [t_end_ask_curr_iter - t_start_ask_curr_iter]
+
         # calculate loss_fun on current iteration candidates
         results = slurm_pool.map(loss_fun, candidates)
         num_loss_fun_calls_total += len(candidates)
@@ -188,6 +194,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         status['num_constraint_fun_calls_total'] = num_constraint_fun_calls_total
         status['num_asks_total'] = num_asks_total
         status['evaluated_points'] = evaluated_points
+        status['candidates_ask_time_per_iter'] = candidates_ask_time_per_iter
 
         if save_restart:
             if verbosity >= 3:
