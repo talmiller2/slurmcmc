@@ -29,9 +29,9 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
             status = load_restart_file(work_dir, restart_file)
             optimizer = status['optimizer']
             x_min = status['x_min']
+            loss_min_per_iter = status['loss_best_per_iter']
+            loss_min_all_iter = status['loss_min_all_iter']
             loss_min = status['loss_min']
-            loss_min_iters = status['loss_min_iters']
-            loss_per_iters = status['loss_per_iters']
             slurm_pool = status['slurm_pool']
             ini_iter = status['ini_iter']
             num_loss_fun_calls_total = status['num_loss_fun_calls_total']
@@ -72,9 +72,9 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         num_constraint_fun_calls_total = 0
         num_asks_total = 0
         evaluated_points = set()
+        loss_min_per_iter = []
+        loss_min_all_iter = []
         loss_min = np.inf
-        loss_min_iters = []
-        loss_per_iters = []
 
     ## start optimization iterations
     for curr_iter in range(ini_iter, ini_iter + num_iters):
@@ -161,8 +161,8 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         if curr_loss_min < loss_min:
             loss_min = curr_loss_min
             x_min = curr_x_min
-        loss_min_iters += [loss_min]
-        loss_per_iters += [curr_loss_min]
+        loss_min_all_iter += [loss_min]
+        loss_min_per_iter += [curr_loss_min]
 
         if verbosity >= 2:
             logging.info('    curr best: x_min: ' + str(x_min) + ', loss_min: ' + str(loss_min))
@@ -171,9 +171,9 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         status = {}
         status['optimizer'] = optimizer
         status['x_min'] = x_min
+        status['loss_min_per_iter'] = loss_min_per_iter
+        status['loss_min_all_iter'] = loss_min_all_iter
         status['loss_min'] = loss_min
-        status['loss_min_iters'] = loss_min_iters
-        status['loss_per_iters'] = loss_per_iters
         status['slurm_pool'] = slurm_pool
         status['ini_iter'] = curr_iter + 1
         status['num_loss_fun_calls_total'] = num_loss_fun_calls_total

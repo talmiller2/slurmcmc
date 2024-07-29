@@ -12,6 +12,7 @@ np.random.seed(0)
 torch.manual_seed(0)
 
 plt.close('all')
+plt.interactive(True)
 
 num_params = 2
 param_bounds = [[-5, 5], [-5, 5]]
@@ -113,15 +114,15 @@ plt.tight_layout()
 # plot the progression of the loss function with optimization iterations
 loss_history = result['slurm_pool'].values_history[:, 0]
 point_num_array = [i for i in range(len(loss_history))]
-loss_min_iters = result['loss_min_iters']
-loss_per_iters = result['loss_per_iters']
-iter_num_array = [(i + 1) * num_workers for i in range(len(loss_min_iters))]
-iter_num_array = [(i + 1) * num_workers for i in range(len(loss_min_iters))]
+loss_min_all_iter = result['loss_min_all_iter']
+loss_min_per_iter = result['loss_min_per_iter']
+iter_num_array = [(i + 1) * num_workers for i in range(len(loss_min_all_iter))]
+iter_num_array = [(i + 1) * num_workers for i in range(len(loss_min_all_iter))]
 
 plt.figure(2, figsize=(8, 5))
 plt.plot(point_num_array, loss_history, '.b', label='all samples')
-plt.plot(iter_num_array, loss_per_iters, '-og', label='iteration min')
-plt.plot(iter_num_array, loss_min_iters, '-or', label='best min')
+plt.plot(iter_num_array, loss_min_per_iter, '-og', label='min per iter')
+plt.plot(iter_num_array, loss_min_all_iter, '-or', label='min overall')
 plt.yscale('log')
 plt.xlabel('# sample')
 plt.ylabel('loss')
