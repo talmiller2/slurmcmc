@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import pickle
@@ -64,3 +65,11 @@ def combine_args(arg, extra_arg=None):
 def delete_directory(dir_path):
     if os.path.isdir(dir_path):
         shutil.rmtree(dir_path, ignore_errors=True)
+
+
+def save_extra_arg_to_file(work_dir, extra_arg):
+    # save the extra_arg in the run folder to document the full input used for this point
+    if extra_arg is not None:
+        extra_arg_file = work_dir + '/extra_arg.txt'
+        with open(extra_arg_file, 'w') as json_file:
+            json.dump(extra_arg, json_file)

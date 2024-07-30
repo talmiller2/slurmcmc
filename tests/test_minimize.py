@@ -80,6 +80,17 @@ def test_slurm_minimize_1param(work_dir, verbosity):
     assert result['loss_min'] <= 1e-3
 
 
+def test_slurm_minimize_1param_local(work_dir, verbosity):
+    num_params = 1
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    num_workers = 5
+    num_iters = 2
+
+    result = slurm_minimize(loss_fun=loss_fun_1d,
+                            param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                            work_dir=work_dir, cluster='local', verbosity=verbosity)
+
+
 def test_slurm_minimize_2params(work_dir, verbosity):
     num_params = 2
     param_bounds = [[-5, 5] for _ in range(num_params)]

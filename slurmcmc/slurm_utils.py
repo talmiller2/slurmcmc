@@ -1,10 +1,10 @@
-import json
 import logging
 import os
 
 import numpy as np
 import submitit
-from slurmcmc.general_utils import combine_args, set_logging
+
+from slurmcmc.general_utils import combine_args, set_logging, save_extra_arg_to_file
 
 
 class SlurmPool():
@@ -144,11 +144,9 @@ class SlurmPool():
 
         # save current iteration points in the main iteration_dir
         np.savetxt(iteration_dir + '/inputs.txt', np.array(points))
-        if self.extra_arg is not None:
-            # save the extra_arg in the run folder to document the full input used for this point
-            extra_arg_file = iteration_dir + '/extra_arg.txt'
-            with open(extra_arg_file, 'w') as json_file:
-                json.dump(self.extra_arg, json_file)
+
+        # save the extra_arg in the run folder to document the full input used for this point
+        save_extra_arg_to_file(iteration_dir, self.extra_arg)
 
         # send the jobs
         jobs = []
