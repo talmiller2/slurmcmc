@@ -1,7 +1,7 @@
 import os
-import unittest
 
 import numpy as np
+import pytest
 import torch
 from scipy.optimize import rosen
 
@@ -48,216 +48,222 @@ def constraint_fun_with_extra_arg(x, extra_arg):
             return -1
 
 
-class test_minimize(unittest.TestCase):
+@pytest.fixture
+def work_dir(request):
+    os.chdir(os.path.dirname(__file__))
+    np.random.seed(0)
+    torch.manual_seed(0)
+    work_dir = os.path.dirname(__file__) + '/test_work_dir_' + request.function.__name__
 
-    def setUp(self):
-        os.chdir(os.path.dirname(__file__))
-        np.random.seed(0)
-        torch.manual_seed(0)
-        self.work_dir = os.path.dirname(__file__) + '/test_work_dir_' + self._testMethodName
-        self.verbosity = 1
+    yield work_dir
 
-    def tearDown(self):
-        delete_directory(self.work_dir)
+    delete_directory(work_dir)
 
-    def test_slurm_minimize_1param(self):
-        num_params = 1
-        param_bounds = [[-5, 5] for _ in range(num_params)]
-        expected_minima_point = np.ones(num_params)
-        num_workers = 5
-        num_iters = 10
 
-        result = slurm_minimize(loss_fun=loss_fun_1d,
-                                param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
-                                cluster='local-map', verbosity=self.verbosity)
+@pytest.fixture
+def verbosity():
+    return 1
 
-        self.assertLessEqual(np.linalg.norm(result['x_min'] - expected_minima_point), 0.02)
-        self.assertLessEqual(result['loss_min'], 1e-3)
 
-    def test_slurm_minimize_2params(self):
-        num_params = 2
-        param_bounds = [[-5, 5] for _ in range(num_params)]
-        expected_minima_point = np.ones(num_params)
-        num_workers = 5
-        num_iters = 20
+def test_slurm_minimize_1param(work_dir, verbosity):
+    num_params = 1
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    expected_minima_point = np.ones(num_params)
+    num_workers = 5
+    num_iters = 10
 
-        result = slurm_minimize(loss_fun=loss_fun,
-                                param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
-                                cluster='local-map', verbosity=self.verbosity)
+    result = slurm_minimize(loss_fun=loss_fun_1d,
+                            param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                            cluster='local-map', verbosity=verbosity)
 
-        self.assertLessEqual(np.linalg.norm(result['x_min'] - expected_minima_point), 0.3)
-        self.assertLessEqual(result['loss_min'], 0.05)
+    assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.02
+    assert result['loss_min'] <= 1e-3
 
-    def test_slurm_minimize_3params(self):
-        num_params = 3
-        param_bounds = [[-5, 5] for _ in range(num_params)]
-        expected_minima_point = np.ones(num_params)
-        num_workers = 10
-        num_iters = 100
 
-        result = slurm_minimize(loss_fun=loss_fun,
-                                param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
-                                cluster='local-map', verbosity=self.verbosity,
-                                )
+def test_slurm_minimize_2params(work_dir, verbosity):
+    num_params = 2
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    expected_minima_point = np.ones(num_params)
+    num_workers = 5
+    num_iters = 20
 
-        self.assertLessEqual(np.linalg.norm(result['x_min'] - expected_minima_point), 0.7)
-        self.assertLessEqual(result['loss_min'], 0.1)
+    result = slurm_minimize(loss_fun=loss_fun,
+                            param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                            cluster='local-map', verbosity=verbosity)
 
-    def test_slurm_minimize_2params_with_constraint(self):
-        num_params = 2
-        param_bounds = [[-5, 5] for _ in range(num_params)]
-        expected_minima_point = np.ones(num_params)
-        num_workers = 10
-        num_iters = 30
+    assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.3
+    assert result['loss_min'] <= 0.05
 
-        result = slurm_minimize(loss_fun=loss_fun, constraint_fun=constraint_fun,
-                                param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
-                                cluster='local-map', verbosity=self.verbosity)
 
-        self.assertLessEqual(np.linalg.norm(result['x_min'] - expected_minima_point), 0.5)
-        self.assertLessEqual(result['loss_min'], 0.05)
+def test_slurm_minimize_3params(work_dir, verbosity):
+    num_params = 3
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    expected_minima_point = np.ones(num_params)
+    num_workers = 10
+    num_iters = 100
 
-    def test_slurm_minimize_2params_with_constraint_from_init_points(self):
-        num_params = 2
-        param_bounds = [[-5, 5] for _ in range(num_params)]
-        expected_minima_point = np.ones(num_params)
-        num_workers = 10
-        num_iters = 40
-        np.random.seed(0)
+    result = slurm_minimize(loss_fun=loss_fun,
+                            param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                            cluster='local-map', verbosity=verbosity)
 
-        init_points = [np.array([-1, -1]) + np.random.rand(2) for _ in range(num_workers)]
-        result = slurm_minimize(loss_fun=loss_fun, constraint_fun=constraint_fun, init_points=init_points,
-                                param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
-                                cluster='local-map', verbosity=self.verbosity)
+    assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.7
+    assert result['loss_min'] <= 0.1
 
-        self.assertLessEqual(np.linalg.norm(result['x_min'] - expected_minima_point), 0.5)
-        self.assertLessEqual(result['loss_min'], 0.05)
 
-    def test_slurm_minimize_2params_with_constraint_from_illegal_init_points(self):
-        num_params = 2
-        param_bounds = [[-5, 5] for _ in range(num_params)]
-        num_workers = 10
-        num_iters = 30
+def test_slurm_minimize_2params_with_constraint(work_dir, verbosity):
+    num_params = 2
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    expected_minima_point = np.ones(num_params)
+    num_workers = 10
+    num_iters = 30
 
-        with self.assertRaises(ValueError):
-            init_points = [np.array([-4, -4]) + 0.1 * np.random.rand(2) for _ in range(num_workers)]
-            slurm_minimize(loss_fun=loss_fun, constraint_fun=constraint_fun, init_points=init_points,
+    result = slurm_minimize(loss_fun=loss_fun, constraint_fun=constraint_fun,
+                            param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                            cluster='local-map', verbosity=verbosity)
+
+    assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.5
+    assert result['loss_min'] <= 0.05
+
+
+def test_slurm_minimize_2params_with_constraint_from_init_points(work_dir, verbosity):
+    num_params = 2
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    expected_minima_point = np.ones(num_params)
+    num_workers = 10
+    num_iters = 40
+    np.random.seed(0)
+
+    init_points = [np.array([-1, -1]) + np.random.rand(2) for _ in range(num_workers)]
+    result = slurm_minimize(loss_fun=loss_fun, constraint_fun=constraint_fun, init_points=init_points,
+                            param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                            cluster='local-map', verbosity=verbosity)
+
+    assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.5
+    assert result['loss_min'] <= 0.05
+
+
+def test_slurm_minimize_2params_with_constraint_from_illegal_init_points(work_dir, verbosity):
+    num_params = 2
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    num_workers = 10
+    num_iters = 30
+
+    with pytest.raises(ValueError):
+        init_points = [np.array([-4, -4]) + 0.1 * np.random.rand(2) for _ in range(num_workers)]
+        slurm_minimize(loss_fun=loss_fun, constraint_fun=constraint_fun, init_points=init_points,
+                       param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                       cluster='local-map', verbosity=verbosity)
+
+
+def test_slurm_minimize_2params_with_restart(work_dir, verbosity):
+    num_params = 2
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    num_workers = 5
+    num_iters = 20
+
+    # run and save restart
+    res_1 = slurm_minimize(loss_fun=loss_fun,
                            param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
-                           cluster='local-map', verbosity=self.verbosity)
+                           cluster='local-map', verbosity=verbosity,
+                           work_dir=work_dir, save_restart=True, load_restart=False)
+    assert res_1['slurm_pool'].num_calls == num_iters
+    assert len(res_1['slurm_pool'].points_history) == num_iters * num_workers
+    assert res_1['ini_iter'] == num_iters
 
-    def test_slurm_minimize_2params_with_restart(self):
-        num_params = 2
-        param_bounds = [[-5, 5] for _ in range(num_params)]
-        num_workers = 5
-        num_iters = 20
-
-        # run and save restart
-        res_1 = slurm_minimize(loss_fun=loss_fun,
-                               param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
-                               cluster='local-map', verbosity=self.verbosity,
-                               work_dir=self.work_dir, save_restart=True, load_restart=False,
-                               )
-        self.assertEqual(res_1['slurm_pool'].num_calls, num_iters)
-        self.assertEqual(len(res_1['slurm_pool'].points_history), num_iters * num_workers)
-        self.assertEqual(res_1['ini_iter'], num_iters)
-
-        # run again from previous restart
-        res_2 = slurm_minimize(loss_fun=loss_fun,
-                               param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
-                               cluster='local-map', verbosity=self.verbosity,
-                               work_dir=self.work_dir, save_restart=True, load_restart=True,
-                               )
-        self.assertEqual(res_2['slurm_pool'].num_calls, 2 * num_iters)
-        self.assertEqual(len(res_2['slurm_pool'].points_history), 2 * num_iters * num_workers)
-        self.assertEqual(res_2['ini_iter'], 2 * num_iters)
-
-    def test_slurm_minimize_2params_with_log_file(self):
-        num_params = 2
-        param_bounds = [[-5, 5] for _ in range(num_params)]
-        num_workers = 4
-        num_iters = 3
-
-        result = slurm_minimize(loss_fun=loss_fun,
-                                param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
-                                cluster='local-map',
-                                verbosity=self.verbosity,
-                                work_dir=self.work_dir, log_file='log_file.txt')
-
-        self.assertTrue(os.path.isfile(self.work_dir + '/log_file.txt'), 'log_file was not created.')
-
-    def test_slurm_minimize_2params_with_constraint_and_with_extra_arg_fail(self):
-        num_params = 2
-        param_bounds = [[-5, 5] for _ in range(num_params)]
-        expected_minima_point = np.ones(num_params)
-        num_workers = 10
-        num_iters = 30
-
-        with self.assertRaises(TypeError):
-            result = slurm_minimize(loss_fun=loss_fun_with_extra_arg, constraint_fun=constraint_fun_with_extra_arg,
-                                    extra_arg=None,  # extra_arg not supplied and therefore should fail
-                                    param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
-                                    cluster='local-map',
-                                    verbosity=self.verbosity,
-                                    work_dir=self.work_dir)
-
-    def test_slurm_minimize_2params_with_constraint_and_with_extra_arg(self):
-        num_params = 2
-        param_bounds = [[-5, 5] for _ in range(num_params)]
-        expected_minima_point = np.ones(num_params)
-        num_workers = 10
-        num_iters = 30
-
-        result = slurm_minimize(loss_fun=loss_fun_with_extra_arg, constraint_fun=constraint_fun_with_extra_arg,
-                                extra_arg='sunny',
-                                param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
-                                cluster='local-map',
-                                verbosity=self.verbosity,
-                                work_dir=self.work_dir)
-        self.assertLessEqual(np.linalg.norm(result['x_min'] - expected_minima_point), 0.5)
-        self.assertLessEqual(result['loss_min'], 0.05)
-
-    def test_slurm_minimize_1param_botorch(self):
-        num_params = 1
-        param_bounds = [[-5, 5] for _ in range(num_params)]
-        expected_minima_point = np.ones(num_params)
-        num_workers = 5
-        num_iters = 8
-
-        result = slurm_minimize(loss_fun=loss_fun_1d,
-                                param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
-                                optimizer_package='botorch', cluster='local-map',
-                                verbosity=self.verbosity)
-
-        self.assertLessEqual(np.linalg.norm(result['x_min'] - expected_minima_point), 0.02)
-        self.assertLessEqual(result['loss_min'], 1e-3)
-
-    def test_slurm_minimize_1param_botorch_with_restart(self):
-        num_params = 1
-        param_bounds = [[-5, 5] for _ in range(num_params)]
-        num_workers = 5
-        num_iters = 4
-
-        # run and save restart
-        res_1 = slurm_minimize(loss_fun=loss_fun_1d,
-                               param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
-                               optimizer_package='botorch', cluster='local-map', verbosity=self.verbosity,
-                               work_dir=self.work_dir, save_restart=True, load_restart=False,
-                               )
-        self.assertEqual(res_1['slurm_pool'].num_calls, num_iters)
-        self.assertEqual(len(res_1['slurm_pool'].points_history), num_iters * num_workers)
-        self.assertEqual(res_1['ini_iter'], num_iters)
-
-        # run again from previous restart
-        res_2 = slurm_minimize(loss_fun=loss_fun_1d,
-                               param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
-                               optimizer_package='botorch', cluster='local-map', verbosity=self.verbosity,
-                               work_dir=self.work_dir, save_restart=True, load_restart=True,
-                               )
-        self.assertEqual(res_2['slurm_pool'].num_calls, 2 * num_iters)
-        self.assertEqual(len(res_2['slurm_pool'].points_history), 2 * num_iters * num_workers)
-        self.assertEqual(res_2['ini_iter'], 2 * num_iters)
-        self.assertLessEqual(res_2['loss_min'], 1e-3)
+    # run again from previous restart
+    res_2 = slurm_minimize(loss_fun=loss_fun,
+                           param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                           cluster='local-map', verbosity=verbosity,
+                           work_dir=work_dir, save_restart=True, load_restart=True)
+    assert res_2['slurm_pool'].num_calls == 2 * num_iters
+    assert len(res_2['slurm_pool'].points_history) == 2 * num_iters * num_workers
+    assert res_2['ini_iter'] == 2 * num_iters
 
 
-if __name__ == '__main__':
-    unittest.main()
+def test_slurm_minimize_2params_with_log_file(work_dir, verbosity):
+    num_params = 2
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    num_workers = 4
+    num_iters = 3
+
+    slurm_minimize(loss_fun=loss_fun,
+                   param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                   cluster='local-map',
+                   verbosity=verbosity,
+                   work_dir=work_dir, log_file='log_file.txt')
+
+    assert os.path.isfile(work_dir + '/log_file.txt'), 'log_file was not created.'
+
+
+def test_slurm_minimize_2params_with_constraint_and_with_extra_arg_fail(work_dir, verbosity):
+    num_params = 2
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    num_workers = 10
+    num_iters = 30
+
+    with pytest.raises(TypeError):
+        slurm_minimize(loss_fun=loss_fun_with_extra_arg, constraint_fun=constraint_fun_with_extra_arg,
+                       extra_arg=None,  # extra_arg not supplied and therefore should fail
+                       param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                       cluster='local-map',
+                       verbosity=verbosity,
+                       work_dir=work_dir)
+
+
+def test_slurm_minimize_2params_with_constraint_and_with_extra_arg(work_dir, verbosity):
+    num_params = 2
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    expected_minima_point = np.ones(num_params)
+    num_workers = 10
+    num_iters = 30
+
+    result = slurm_minimize(loss_fun=loss_fun_with_extra_arg, constraint_fun=constraint_fun_with_extra_arg,
+                            extra_arg='sunny',
+                            param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                            cluster='local-map',
+                            verbosity=verbosity,
+                            work_dir=work_dir)
+    assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.5
+    assert result['loss_min'] <= 0.05
+
+
+def test_slurm_minimize_1param_botorch(work_dir, verbosity):
+    num_params = 1
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    expected_minima_point = np.ones(num_params)
+    num_workers = 5
+    num_iters = 8
+
+    result = slurm_minimize(loss_fun=loss_fun_1d,
+                            param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                            optimizer_package='botorch', cluster='local-map',
+                            verbosity=verbosity)
+
+    assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.02
+    assert result['loss_min'] <= 1e-3
+
+
+def test_slurm_minimize_1param_botorch_with_restart(work_dir, verbosity):
+    num_params = 1
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    num_workers = 5
+    num_iters = 4
+
+    # run and save restart
+    res_1 = slurm_minimize(loss_fun=loss_fun_1d,
+                           param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                           optimizer_package='botorch', cluster='local-map', verbosity=verbosity,
+                           work_dir=work_dir, save_restart=True, load_restart=False)
+    assert res_1['slurm_pool'].num_calls == num_iters
+    assert len(res_1['slurm_pool'].points_history) == num_iters * num_workers
+    assert res_1['ini_iter'] == num_iters
+
+    # run again from previous restart
+    res_2 = slurm_minimize(loss_fun=loss_fun_1d,
+                           param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                           optimizer_package='botorch', cluster='local-map', verbosity=verbosity,
+                           work_dir=work_dir, save_restart=True, load_restart=True)
+    assert res_2['slurm_pool'].num_calls == 2 * num_iters
+    assert len(res_2['slurm_pool'].points_history) == 2 * num_iters * num_workers
+    assert res_2['ini_iter'] == 2 * num_iters
+    assert res_2['loss_min'] <= 1e-3
