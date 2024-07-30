@@ -37,7 +37,7 @@ def fun_that_writes_file(x):
     return x[0] ** 2 + x[1] ** 2
 
 
-def test_slurmpool_local_map(work_dir, verbosity):
+def test_slurmpool_localmap(work_dir, verbosity):
     slurm_pool = SlurmPool(work_dir, cluster='local-map', verbosity=verbosity)
     fun = lambda x: x ** 2
     points = [2, 3, 4]
@@ -172,7 +172,7 @@ def test_slurmpool_localmap_2params_3outputs_history_with_failed_points(work_dir
     np.testing.assert_array_equal(slurm_pool.failed_points_history, np.vstack([points, points]))
 
 
-def test_slurmpool_local_map_extra_arg(work_dir, verbosity):
+def test_slurmpool_localmap_with_extra_arg(work_dir, verbosity):
     for weather in ['sunny', 'rainy', None]:
         slurm_pool = SlurmPool(work_dir, cluster='local-map', verbosity=verbosity, extra_arg=weather)
         points = [1, 2, 3]
@@ -185,10 +185,11 @@ def test_slurmpool_local_map_extra_arg(work_dir, verbosity):
             assert res == res_expected
 
 
-def test_slurmpool_local_extra_arg(work_dir, verbosity):
+def test_slurmpool_local_with_extra_arg(work_dir, verbosity):
     weather = 'sunny'
     slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity, extra_arg=weather)
     points = [1, 2, 3]
     res_expected = [fun_with_extra_arg(point, weather) for point in points]
     res = slurm_pool.map(fun_with_extra_arg, points)
     assert res == res_expected
+    assert os.path.isfile(os.path.join(work_dir, '0/extra_arg.txt')), 'extra_arg.txt does not appear.'
