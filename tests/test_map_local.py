@@ -7,24 +7,26 @@ from slurmcmc.general_utils import delete_directory
 from slurmcmc.slurm_utils import SlurmPool
 
 
-def fun_with_extra_arg(x, weather):
-    if weather == 'sunny':
-        return x ** 2
-    else:
-        return x + 30
-
-
-def fun_that_writes_file(x):
-    with open('test_file.txt', 'a') as log_file:
-        print(x, file=log_file)
-    return x[0] ** 2 + x[1] ** 2
-
-
 class test_map_local(unittest.TestCase):
     def setUp(self):
         os.chdir(os.path.dirname(__file__))
         self.work_dir = os.path.dirname(__file__) + '/test_work_dir_' + self._testMethodName
         self.verbosity = 1
+
+        def fun_with_extra_arg(x, weather):
+            if weather == 'sunny':
+                return x ** 2
+            else:
+                return x + 30
+
+        self.fun_with_extra_arg = fun_with_extra_arg
+
+        def fun_that_writes_file(x):
+            with open('test_file.txt', 'a') as log_file:
+                print(x, file=log_file)
+            return x[0] ** 2 + x[1] ** 2
+
+        self.fun_that_writes_file = fun_that_writes_file
 
     def tearDown(self):
         delete_directory(self.work_dir)
@@ -118,7 +120,7 @@ class test_map_local(unittest.TestCase):
     def test_slurmpool_local_2params_check_query_dir(self):
         slurm_pool = SlurmPool(self.work_dir, cluster='local', verbosity=self.verbosity)
         points = [[2, 3], [3, 4], [4, 5]]
-        slurm_pool.map(fun_that_writes_file, points)
+        slurm_pool.map(self.fun_that_writes_file, points)
 
         # check test_file was created in the query dir of each point
         for i in range(len(points)):
@@ -157,20 +159,20 @@ class test_map_local(unittest.TestCase):
         for weather in ['sunny', 'rainy', None]:
             slurm_pool = SlurmPool(self.work_dir, cluster='local-map', verbosity=self.verbosity, extra_arg=weather)
             points = [1, 2, 3]
-            res_expected = [fun_with_extra_arg(point, weather) for point in points]
+            res_expected = [self.fun_with_extra_arg(point, weather) for point in points]
             if weather is None:  # should fail
                 with self.assertRaises(TypeError):
-                    res = slurm_pool.map(fun_with_extra_arg, points)
+                    res = slurm_pool.map(self.fun_with_extra_arg, points)
             else:
-                res = slurm_pool.map(fun_with_extra_arg, points)
+                res = slurm_pool.map(self.fun_with_extra_arg, points)
                 self.assertEqual(res, res_expected)
 
     def test_slurmpool_local_extra_arg(self):
         weather = 'sunny'
         slurm_pool = SlurmPool(self.work_dir, cluster='local', verbosity=self.verbosity, extra_arg=weather)
         points = [1, 2, 3]
-        res_expected = [fun_with_extra_arg(point, weather) for point in points]
-        res = slurm_pool.map(fun_with_extra_arg, points)
+        res_expected = [self.fun_with_extra_arg(point, weather) for point in points]
+        res = slurm_pool.map(self.fun_with_extra_arg, points)
         self.assertEqual(res, res_expected)
 
 
