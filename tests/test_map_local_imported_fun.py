@@ -19,7 +19,7 @@ def work_dir(request):
     delete_directory(work_dir)
 
 
-@pytest.fixture()
+@pytest.fixture(scope="module")
 def module_dict():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     return {
@@ -41,21 +41,9 @@ def verbosity():
     return 1
 
 
-def test_slurmpool_local_imported_fun_fail(work_dir, fun_with_extra_arg, verbosity):
+def test_slurmpool_local_imported_fun(work_dir, module_dict, fun_with_extra_arg, verbosity):
     """
-    Using a function that is imported from a different directory, should fail when running with
-    cluster='local' or 'slurm' because does not (cloud)pickle properly.
-    """
-    setup_dict = {'weather': 'sunny'}
-    points = [2, 3, 4]
-    slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity, extra_arg=setup_dict)
-    with pytest.raises(Exception):
-        slurm_pool.map(fun_with_extra_arg, points)
-
-
-def test_slurmpool_local_using_imported_fun(work_dir, module_dict, fun_with_extra_arg, verbosity):
-    """
-    Use imported_fun to allow the function to pass the submitit pipeline,
+    use imported_fun to allow the function to pass the submitit pipeline,
     with the module_dict supplied as an extra_arg.
     """
     setup_dict = {'weather': 'sunny'}
@@ -65,3 +53,15 @@ def test_slurmpool_local_using_imported_fun(work_dir, module_dict, fun_with_extr
     slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity, extra_arg=setup_dict)
     res = slurm_pool.map(imported_fun, points)
     assert res == res_expected
+
+
+def test_slurmpool_local_imported_fun_fail(work_dir, fun_with_extra_arg, verbosity):
+    """
+    using a function that is imported from a different directory, should fail when running with
+    cluster='local' or 'slurm' because does not (cloud)pickle properly.
+    """
+    setup_dict = {'weather': 'sunny'}
+    points = [2, 3, 4]
+    slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity, extra_arg=setup_dict)
+    with pytest.raises(Exception):
+        slurm_pool.map(fun_with_extra_arg, points)
