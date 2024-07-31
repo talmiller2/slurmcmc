@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="slurmcmc",
-    version='1.3',
+    version='1.4',
     author="Tal Miller",
     author_email="talmiller@gmail.com",
     packages=find_packages(),

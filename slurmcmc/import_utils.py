@@ -17,13 +17,20 @@ def import_function_from_module(module_dir, module_name, function_name):
     return imported_function
 
 
-def imported_fun(x, module_dict):
+def imported_fun(x, extra_arg):
     '''
     Define a function that is imported from a different dir than the main dir.
     Allows the function to be passed through the submitit pipeline without error.
     To use, pass module_dict as an extra_arg when defining slurm_utils.SlurmPool.
+    Note that the imported function must be of the form fun(x, extra_arg) even if extra_arg is not used.
     '''
-    fun = import_function_from_module(module_dir=module_dict['module_dir'],
-                                      module_name=module_dict['module_name'],
-                                      function_name=module_dict['function_name'])
-    return fun(x, module_dict)
+    if type(extra_arg) != dict:
+        raise TypeError('the extra_arg to the imported_fun needs to be a dictionary.')
+    if 'imported_fun_dict' in extra_arg:
+        imported_fun_dict = extra_arg['imported_fun_dict']
+    else:
+        imported_fun_dict = extra_arg
+    fun = import_function_from_module(module_dir=imported_fun_dict['module_dir'],
+                                      module_name=imported_fun_dict['module_name'],
+                                      function_name=imported_fun_dict['function_name'])
+    return fun(x, extra_arg)
