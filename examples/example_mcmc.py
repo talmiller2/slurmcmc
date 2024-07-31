@@ -43,13 +43,14 @@ num_iters = 200
 print('num of slurmpool calls should be', num_walkers / 2 * (num_iters + 1))
 
 # initial points chosen to satisfy constraint
-p0 = (np.array([[x0_constraint, y0_constraint] for _ in range(num_walkers)])
-      + (r_constraint * (np.random.rand(num_walkers, num_params) - 0.5)))
+init_points = (np.array([[x0_constraint, y0_constraint] for _ in range(num_walkers)])
+               + (r_constraint * (np.random.rand(num_walkers, num_params) - 0.5)))
 
 # log_prob_fun = log_prob
 log_prob_fun = log_prob_with_constraint
-sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
-                     cluster='local-map')
+sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
+                     cluster='local-map',
+                     )
 
 # print('acceptance fractions:', sampler.acceptance_fraction)
 print("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler.acceptance_fraction)))

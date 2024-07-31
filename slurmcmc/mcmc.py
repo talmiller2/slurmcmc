@@ -7,8 +7,8 @@ from slurmcmc.general_utils import set_logging, save_restart_file, load_restart_
 from slurmcmc.slurm_utils import SlurmPool
 
 
-def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=False,
-               verbosity=1, slurm_vebosity=0, log_file=None, extra_arg=None,
+def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values=None,
+               progress=False, verbosity=1, slurm_vebosity=0, log_file=None, extra_arg=None,
                save_restart=False, load_restart=False, restart_file='mcmc_restart.pkl',
                work_dir='tmp', job_name='mcmc', cluster='slurm', slurm_dict={}, emcee_dict={}):
     """
@@ -44,14 +44,20 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, progress=False,
         nwalkers, ndim = np.array(init_points).shape
         sampler = emcee.EnsembleSampler(nwalkers=nwalkers, ndim=ndim, log_prob_fn=log_prob_fun,
                                         pool=slurm_pool, **emcee_dict)
-        initial_state = init_points
+
+        if init_log_prob_fun_values is None:
+            sampler.initial_state = init_points
+        else:
+            # manually set the initial state and log probabilities
+            sampler.initial_state = emcee.State(init_points, log_prob=np.array(init_log_prob_fun_values))
+
         ini_iter = 0
 
     for curr_iter in range(ini_iter, ini_iter + num_iters):
         if verbosity >= 1:
             logging.info('### curr mcmc iter: ' + str(curr_iter))
-        state = sampler.run_mcmc(initial_state=initial_state, nsteps=1, progress=progress)
-        initial_state = state
+        state = sampler.run_mcmc(initial_state=sampler.initial_state, nsteps=1, progress=progress)
+        sampler.initial_state = state
 
         if save_restart:
             if verbosity >= 3:

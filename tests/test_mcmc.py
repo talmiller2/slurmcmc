@@ -42,13 +42,13 @@ def test_slurm_mcmc(work_dir, verbosity):
     num_walkers = 10
     num_iters = 3
     minima = np.array([1, 1])
-    p0 = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
-    sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
+    init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
+    sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
                          verbosity=verbosity, slurm_vebosity=verbosity,
                          cluster='local-map')
 
     samples = sampler.get_chain(flat=True)
-    samples = np.vstack([p0, samples])  # p0 is not inherently included
+    samples = np.vstack([init_points, samples])  # init_points are not inherently included in the mcmc sampler samples
     num_calculated_points = num_walkers * (num_iters + 1)
     np.testing.assert_equal(samples.shape, (num_calculated_points, num_params))
     np.testing.assert_equal(sampler.pool.points_history.shape, (num_calculated_points, num_params))
@@ -60,8 +60,8 @@ def test_slurm_mcmc_local(work_dir, verbosity):
     num_walkers = 10
     num_iters = 3
     minima = np.array([1, 1])
-    p0 = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
-    sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
+    init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
+    sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
                          verbosity=verbosity, slurm_vebosity=verbosity,
                          work_dir=work_dir, cluster='local')
 
@@ -71,8 +71,8 @@ def test_slurm_mcmc_with_budget(work_dir, verbosity):
     num_walkers = 10
     num_iters = 3
     minima = np.array([1, 1])
-    p0 = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
-    sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
+    init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
+    sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
                          verbosity=verbosity, slurm_vebosity=verbosity,
                          cluster='local-map', slurm_dict={'budget': 5})
     num_calculated_points = num_walkers * (num_iters + 1)
@@ -85,9 +85,8 @@ def test_slurm_mcmc_with_log_file(work_dir, verbosity):
     num_walkers = 10
     num_iters = 3
     minima = np.array([1, 1])
-    p0 = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
-
-    sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
+    init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
+    sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
                          verbosity=verbosity, slurm_vebosity=verbosity,
                          cluster='local-map',
                          work_dir=work_dir, log_file='log_file.txt')
@@ -106,9 +105,9 @@ def test_slurm_mcmc_with_restart(work_dir, verbosity):
     num_points_calc_mcmc = num_walkers * num_iters
 
     minima = np.array([1, 1])
-    p0 = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
+    init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
 
-    sampler_1 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
+    sampler_1 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
                            verbosity=verbosity, slurm_vebosity=verbosity,
                            cluster='local-map',
                            work_dir=work_dir, save_restart=True, load_restart=False)
@@ -120,7 +119,7 @@ def test_slurm_mcmc_with_restart(work_dir, verbosity):
     restart_1 = load_restart_file(work_dir, restart_file='mcmc_restart.pkl')
     assert restart_1['ini_iter'] == num_iters
 
-    sampler_2 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=p0, num_iters=num_iters,
+    sampler_2 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
                            verbosity=verbosity, slurm_vebosity=verbosity,
                            cluster='local-map',
                            work_dir=work_dir, save_restart=True, load_restart=True)
@@ -133,17 +132,34 @@ def test_slurm_mcmc_with_restart(work_dir, verbosity):
     assert restart_2['ini_iter'] == 2 * num_iters
 
 
+def test_slurm_mcmc_init_log_prob_fun_values(work_dir, verbosity):
+    num_params = 2
+    num_walkers = 10
+    num_iters = 3
+    minima = np.array([1, 1])
+    init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
+    init_log_prob_fun_values = [log_prob_fun(point) for point in init_points]
+    sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
+                         init_log_prob_fun_values=init_log_prob_fun_values,
+                         verbosity=verbosity, slurm_vebosity=verbosity,
+                         cluster='local-map')
+    samples = sampler.get_chain(flat=True)
+    num_calculated_points = num_walkers * num_iters  # the initial iteration was not calculated
+    np.testing.assert_equal(samples.shape, (num_calculated_points, num_params))
+    np.testing.assert_equal(sampler.pool.points_history.shape, (num_calculated_points, num_params))
+    assert sampler.pool.num_calls == 6
+
+
 def test_slurm_mcmc_with_extra_arg_localmap(work_dir, verbosity):
     num_params = 2
     num_walkers = 5
     num_iters = 2
     minima = np.array([1, 1])
-    p0 = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
-    sampler = slurm_mcmc(log_prob_fun=log_prob_fun_with_extra_arg, init_points=p0, num_iters=num_iters,
+    init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
+    sampler = slurm_mcmc(log_prob_fun=log_prob_fun_with_extra_arg, init_points=init_points, num_iters=num_iters,
                          extra_arg='sunny',
                          verbosity=verbosity, slurm_vebosity=verbosity,
-                         cluster='local-map',
-                         )
+                         cluster='local-map')
 
 
 def test_slurm_mcmc_with_extra_arg_local(work_dir, verbosity):
@@ -151,11 +167,10 @@ def test_slurm_mcmc_with_extra_arg_local(work_dir, verbosity):
     num_walkers = 5
     num_iters = 2
     minima = np.array([1, 1])
-    p0 = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
-    sampler = slurm_mcmc(log_prob_fun=log_prob_fun_with_extra_arg, init_points=p0, num_iters=num_iters,
+    init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
+    sampler = slurm_mcmc(log_prob_fun=log_prob_fun_with_extra_arg, init_points=init_points, num_iters=num_iters,
                          extra_arg='sunny',
                          verbosity=verbosity, slurm_vebosity=verbosity,
-                         work_dir=work_dir, cluster='local',
-                         )
+                         work_dir=work_dir, cluster='local')
 
     assert os.path.isfile(os.path.join(work_dir, 'extra_arg.txt')), 'extra_arg.txt does not appear.'
