@@ -11,10 +11,9 @@ def work_dir(request):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     work_dir = os.path.join(base_dir, f'test_work_dir_{request.node.name}')
     os.makedirs(work_dir, exist_ok=True)
-    original_dir = os.getcwd()
     os.chdir(work_dir)
     yield work_dir
-    os.chdir(original_dir)
+    os.chdir(base_dir)
     delete_directory(work_dir)
 
 

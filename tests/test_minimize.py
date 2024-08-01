@@ -50,13 +50,14 @@ def constraint_fun_with_extra_arg(x, extra_arg):
 
 @pytest.fixture
 def work_dir(request):
-    os.chdir(os.path.dirname(__file__))
     np.random.seed(0)
     torch.manual_seed(0)
-    work_dir = os.path.dirname(__file__) + '/test_work_dir_' + request.function.__name__
-
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    work_dir = os.path.join(base_dir, f'test_work_dir_{request.node.name}')
+    os.makedirs(work_dir, exist_ok=True)
+    os.chdir(work_dir)
     yield work_dir
-
+    os.chdir(base_dir)
     delete_directory(work_dir)
 
 
