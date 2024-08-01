@@ -43,10 +43,12 @@ Progression of the loss with the number of iterations:
 We choose the log-probability function as minus the 2d-rosenbrock function, with zero probability assigned outside of the constraint circle.
 The parallel MCMC algorithm via [``emcee``](https://github.com/dfm/emcee).
 
+We pick the initial points to initiate the MCMC chains at random, but a for an expensive black-box query first an optimization should be done, and the initial points chosen around the minima.
+
 Progress of the chains with iterations (without burn-in or thinning):
 ![example_mcmc_chains_progress](examples/pics/example_mcmc_chains_progress.png)
 
-2d visualization of the points visited by the algorithm (black) and the points accepted to the MCMC samples (red):
+2d visualization of the points visited by the algorithm (black) and the points accepted to the MCMC samples set (red):
 ![example_mcmc_2d_visualization](examples/pics/example_mcmc_2d_visualization.png)
 
 The final product of the Bayesian analysis, a [``corner``](https://github.com/dfm/corner.py) plot of the parameters distribution:
