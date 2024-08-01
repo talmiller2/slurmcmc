@@ -6,6 +6,8 @@ from scipy.optimize import rosen
 from slurmcmc.mcmc import slurm_mcmc
 
 plt.close('all')
+plt.interactive(True)
+plt.rcParams.update({'font.size': 12})
 
 np.random.seed(0)
 
@@ -74,7 +76,8 @@ for i in range(num_params):
     for j in range(num_walkers):
         ax.plot(samples[:, j, i], alpha=0.5, color=color_list[j])
     ax.set_ylabel(labels[i])
-axes[-1].set_xlabel("step number")
+axes[-1].set_xlabel('# iteration')
+axes[0].set_title('evolution of the parameters in different mcmc chains')
 
 # loss_fun 2d plot
 plt.figure(2, figsize=(8, 7))
@@ -89,6 +92,9 @@ plt.pcolormesh(X, Y, np.log(np.abs(Z)))
 plt.xlim(param_bounds[0])
 plt.ylim(param_bounds[1])
 plt.colorbar()
+plt.xlabel('x')
+plt.ylabel('y')
+plt.title('log probability function: rosenbrock')
 
 # plot points sampled during mcmc
 plt.scatter(sampler.pool.points_history[:, 0], sampler.pool.points_history[:, 1], c='k', marker='o', s=10, alpha=0.5)
@@ -108,7 +114,8 @@ plt.tight_layout()
 
 # emcee corner plot
 import corner
+
 fig = plt.figure(num=3, figsize=(7, 7))
-corner.corner(samples_flat, labels=labels, color='k', truths=minima, truth_color='r', fig=fig,
-              label_kwargs={"fontsize": 14}, labelpad=-0.1)
+corner.corner(samples_flat, labels=labels, color='k', truths=minima, truth_color='r', fig=fig, labelpad=-0.1)
+plt.suptitle('mcmc parameters distribution')
 plt.tight_layout()

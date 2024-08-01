@@ -1,11 +1,12 @@
+import time
+
 import matplotlib.pyplot as plt
 import nevergrad as ng
 import numpy as np
 import torch
-import time
-
 from matplotlib.pyplot import cm
 from scipy.optimize import rosen
+
 from slurmcmc.optimization import slurm_minimize
 
 np.random.seed(0)
@@ -13,6 +14,7 @@ torch.manual_seed(0)
 
 plt.close('all')
 plt.interactive(True)
+plt.rcParams.update({'font.size': 12})
 
 num_params = 2
 param_bounds = [[-5, 5], [-5, 5]]
@@ -43,8 +45,9 @@ def loss_fun_with_constraint(x):
     else:
         return loss_fun(x)
 
+
 num_workers = 10
-num_iters = 20
+num_iters = 30
 
 ## define the optimization algorithm
 
@@ -94,6 +97,9 @@ plt.pcolormesh(X, Y, np.log(np.abs(Z)))
 plt.xlim(param_bounds[0])
 plt.ylim(param_bounds[1])
 plt.colorbar()
+plt.xlabel('x')
+plt.ylabel('y')
+plt.title('loss function: rosenbrock')
 
 # plot points sampled during optimization
 history = result['slurm_pool'].points_history
