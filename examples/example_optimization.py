@@ -16,6 +16,9 @@ plt.close('all')
 plt.interactive(True)
 plt.rcParams.update({'font.size': 12})
 
+save_plots = False
+# save_plots = True
+
 num_params = 2
 param_bounds = [[-5, 5], [-5, 5]]
 
@@ -117,6 +120,9 @@ theta = np.linspace(0, 2 * np.pi, 100)
 plt.plot(x0_constraint + r_constraint * np.cos(theta), y0_constraint + r_constraint * np.sin(theta), color='w')
 plt.tight_layout()
 
+if save_plots:
+    plt.savefig('example_optimization_2d_visualization')
+
 # plot the progression of the loss function with optimization iterations
 loss_history = result['slurm_pool'].values_history[:, 0]
 point_num_array = [i for i in range(len(loss_history))]
@@ -130,8 +136,12 @@ plt.plot(point_num_array, loss_history, '.b', label='all samples')
 plt.plot(iter_num_array, loss_min_per_iter, '-og', label='min per iter')
 plt.plot(iter_num_array, loss_min_all_iter, '-or', label='min overall')
 plt.yscale('log')
-plt.xlabel('# sample')
+plt.xlabel('# point sample')
 plt.ylabel('loss')
+plt.title('evolution of the loss with optimization iterations')
 plt.grid(True)
 plt.legend()
 plt.tight_layout()
+
+if save_plots:
+    plt.savefig('example_optimization_loss_progress')

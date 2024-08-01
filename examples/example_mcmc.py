@@ -9,6 +9,9 @@ plt.close('all')
 plt.interactive(True)
 plt.rcParams.update({'font.size': 12})
 
+save_plots = False
+# save_plots = True
+
 np.random.seed(0)
 
 param_bounds = [[-5, 5], [-5, 5]]
@@ -79,6 +82,9 @@ for i in range(num_params):
 axes[-1].set_xlabel('# iteration')
 axes[0].set_title('evolution of the parameters in different mcmc chains')
 
+if save_plots:
+    plt.savefig('example_mcmc_chains_progress')
+
 # loss_fun 2d plot
 plt.figure(2, figsize=(8, 7))
 x = np.linspace(param_bounds[0][0], param_bounds[0][1], 100)
@@ -112,6 +118,9 @@ theta = np.linspace(0, 2 * np.pi, 100)
 plt.plot(x0_constraint + r_constraint * np.cos(theta), y0_constraint + r_constraint * np.sin(theta), color='w')
 plt.tight_layout()
 
+if save_plots:
+    plt.savefig('example_mcmc_2d_visualization')
+
 # emcee corner plot
 import corner
 
@@ -119,3 +128,6 @@ fig = plt.figure(num=3, figsize=(7, 7))
 corner.corner(samples_flat, labels=labels, color='k', truths=minima, truth_color='r', fig=fig, labelpad=-0.1)
 plt.suptitle('mcmc parameters distribution')
 plt.tight_layout()
+
+if save_plots:
+    plt.savefig('example_mcmc_parameters_distribution')
