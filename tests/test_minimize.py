@@ -50,8 +50,6 @@ def constraint_fun_with_extra_arg(x, extra_arg):
 
 @pytest.fixture
 def work_dir(request):
-    np.random.seed(0)
-    torch.manual_seed(0)
     base_dir = os.path.dirname(os.path.abspath(__file__))
     work_dir = os.path.join(base_dir, f'test_work_dir_{request.node.name}')
     os.makedirs(work_dir, exist_ok=True)
@@ -62,11 +60,17 @@ def work_dir(request):
 
 
 @pytest.fixture
+def seed():
+    np.random.seed(0)
+    torch.manual_seed(0)
+
+
+@pytest.fixture
 def verbosity():
     return 1
 
 
-def test_slurm_minimize_1param(work_dir, verbosity):
+def test_slurm_minimize_1param(verbosity, seed):
     num_params = 1
     param_bounds = [[-5, 5] for _ in range(num_params)]
     expected_minima_point = np.ones(num_params)
@@ -81,7 +85,7 @@ def test_slurm_minimize_1param(work_dir, verbosity):
     assert result['loss_min'] <= 1e-3
 
 
-def test_slurm_minimize_1param_local(work_dir, verbosity):
+def test_slurm_minimize_1param_local(work_dir, verbosity, seed):
     num_params = 1
     param_bounds = [[-5, 5] for _ in range(num_params)]
     num_workers = 5
@@ -92,7 +96,7 @@ def test_slurm_minimize_1param_local(work_dir, verbosity):
                             work_dir=work_dir, cluster='local', verbosity=verbosity)
 
 
-def test_slurm_minimize_2params(work_dir, verbosity):
+def test_slurm_minimize_2params(verbosity, seed):
     num_params = 2
     param_bounds = [[-5, 5] for _ in range(num_params)]
     expected_minima_point = np.ones(num_params)
@@ -107,7 +111,7 @@ def test_slurm_minimize_2params(work_dir, verbosity):
     assert result['loss_min'] <= 0.05
 
 
-def test_slurm_minimize_3params(work_dir, verbosity):
+def test_slurm_minimize_3params(verbosity, seed):
     num_params = 3
     param_bounds = [[-5, 5] for _ in range(num_params)]
     expected_minima_point = np.ones(num_params)
@@ -122,7 +126,7 @@ def test_slurm_minimize_3params(work_dir, verbosity):
     assert result['loss_min'] <= 0.1
 
 
-def test_slurm_minimize_2params_with_constraint(work_dir, verbosity):
+def test_slurm_minimize_2params_with_constraint(verbosity, seed):
     num_params = 2
     param_bounds = [[-5, 5] for _ in range(num_params)]
     expected_minima_point = np.ones(num_params)
@@ -137,7 +141,7 @@ def test_slurm_minimize_2params_with_constraint(work_dir, verbosity):
     assert result['loss_min'] <= 0.05
 
 
-def test_slurm_minimize_2params_with_constraint_from_init_points(work_dir, verbosity):
+def test_slurm_minimize_2params_with_constraint_from_init_points(verbosity, seed):
     num_params = 2
     param_bounds = [[-5, 5] for _ in range(num_params)]
     expected_minima_point = np.ones(num_params)
@@ -154,7 +158,7 @@ def test_slurm_minimize_2params_with_constraint_from_init_points(work_dir, verbo
     assert result['loss_min'] <= 0.05
 
 
-def test_slurm_minimize_2params_with_constraint_from_illegal_init_points(work_dir, verbosity):
+def test_slurm_minimize_2params_with_constraint_from_illegal_init_points(verbosity, seed):
     num_params = 2
     param_bounds = [[-5, 5] for _ in range(num_params)]
     num_workers = 10
@@ -167,7 +171,7 @@ def test_slurm_minimize_2params_with_constraint_from_illegal_init_points(work_di
                        cluster='local-map', verbosity=verbosity)
 
 
-def test_slurm_minimize_2params_with_restart(work_dir, verbosity):
+def test_slurm_minimize_2params_with_restart(work_dir, verbosity, seed):
     num_params = 2
     param_bounds = [[-5, 5] for _ in range(num_params)]
     num_workers = 5
@@ -192,7 +196,7 @@ def test_slurm_minimize_2params_with_restart(work_dir, verbosity):
     assert res_2['ini_iter'] == 2 * num_iters
 
 
-def test_slurm_minimize_2params_with_log_file(work_dir, verbosity):
+def test_slurm_minimize_2params_with_log_file(work_dir, verbosity, seed):
     num_params = 2
     param_bounds = [[-5, 5] for _ in range(num_params)]
     num_workers = 4
@@ -207,7 +211,7 @@ def test_slurm_minimize_2params_with_log_file(work_dir, verbosity):
     assert os.path.isfile(work_dir + '/log_file.txt'), 'log_file was not created.'
 
 
-def test_slurm_minimize_2params_with_constraint_and_with_extra_arg_fail(work_dir, verbosity):
+def test_slurm_minimize_2params_with_constraint_and_with_extra_arg_fail(verbosity, seed):
     num_params = 2
     param_bounds = [[-5, 5] for _ in range(num_params)]
     num_workers = 10
@@ -218,11 +222,10 @@ def test_slurm_minimize_2params_with_constraint_and_with_extra_arg_fail(work_dir
                        extra_arg=None,  # extra_arg not supplied and therefore should fail
                        param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
                        cluster='local-map',
-                       verbosity=verbosity,
-                       work_dir=work_dir)
+                       verbosity=verbosity)
 
 
-def test_slurm_minimize_2params_with_constraint_and_with_extra_arg(work_dir, verbosity):
+def test_slurm_minimize_2params_with_constraint_and_with_extra_arg(verbosity, seed):
     num_params = 2
     param_bounds = [[-5, 5] for _ in range(num_params)]
     expected_minima_point = np.ones(num_params)
@@ -233,13 +236,12 @@ def test_slurm_minimize_2params_with_constraint_and_with_extra_arg(work_dir, ver
                             extra_arg='sunny',
                             param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
                             cluster='local-map',
-                            verbosity=verbosity,
-                            work_dir=work_dir)
+                            verbosity=verbosity)
     assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.5
     assert result['loss_min'] <= 0.05
 
 
-def test_slurm_minimize_1param_botorch(work_dir, verbosity):
+def test_slurm_minimize_1param_botorch(verbosity, seed):
     num_params = 1
     param_bounds = [[-5, 5] for _ in range(num_params)]
     expected_minima_point = np.ones(num_params)
@@ -255,7 +257,7 @@ def test_slurm_minimize_1param_botorch(work_dir, verbosity):
     assert result['loss_min'] <= 1e-3
 
 
-def test_slurm_minimize_1param_botorch_with_restart(work_dir, verbosity):
+def test_slurm_minimize_1param_botorch_with_restart(work_dir, verbosity, seed):
     num_params = 1
     param_bounds = [[-5, 5] for _ in range(num_params)]
     num_workers = 5

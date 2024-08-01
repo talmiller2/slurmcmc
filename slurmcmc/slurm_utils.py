@@ -16,7 +16,7 @@ class SlurmPool():
     cluster: 'slurm' or 'local' (run locally with submitit) or 'local-map' (run locally with map)
     """
 
-    def __init__(self, work_dir, job_name='tmp', cluster='slurm', budget=int(1e6), verbosity=1, log_file=None,
+    def __init__(self, work_dir='tmp', job_name='tmp', cluster='slurm', budget=int(1e6), verbosity=1, log_file=None,
                  extra_arg=None, **job_params):
         self.num_calls = 0
         self.points_history = []

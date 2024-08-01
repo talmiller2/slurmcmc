@@ -21,7 +21,6 @@ def log_prob_fun_with_extra_arg(x, extra_arg):
 
 @pytest.fixture()
 def work_dir(request):
-    np.random.seed(0)
     base_dir = os.path.dirname(os.path.abspath(__file__))
     work_dir = os.path.join(base_dir, f'test_work_dir_{request.node.name}')
     os.makedirs(work_dir, exist_ok=True)
@@ -31,12 +30,17 @@ def work_dir(request):
     delete_directory(work_dir)
 
 
+@pytest.fixture
+def seed():
+    np.random.seed(0)
+
+
 @pytest.fixture()
 def verbosity():
     return 1
 
 
-def test_slurm_mcmc(work_dir, verbosity):
+def test_slurm_mcmc(verbosity, seed):
     num_params = 2
     num_walkers = 10
     num_iters = 3
@@ -54,7 +58,7 @@ def test_slurm_mcmc(work_dir, verbosity):
     assert sampler.pool.num_calls == 7
 
 
-def test_slurm_mcmc_local(work_dir, verbosity):
+def test_slurm_mcmc_local(work_dir, verbosity, seed):
     num_params = 2
     num_walkers = 10
     num_iters = 3
@@ -65,7 +69,7 @@ def test_slurm_mcmc_local(work_dir, verbosity):
                          work_dir=work_dir, cluster='local')
 
 
-def test_slurm_mcmc_with_budget(work_dir, verbosity):
+def test_slurm_mcmc_with_budget(verbosity, seed):
     num_params = 2
     num_walkers = 10
     num_iters = 3
@@ -79,7 +83,7 @@ def test_slurm_mcmc_with_budget(work_dir, verbosity):
     assert sampler.pool.num_calls == 8
 
 
-def test_slurm_mcmc_with_log_file(work_dir, verbosity):
+def test_slurm_mcmc_with_log_file(work_dir, verbosity, seed):
     num_params = 2
     num_walkers = 10
     num_iters = 3
@@ -93,7 +97,7 @@ def test_slurm_mcmc_with_log_file(work_dir, verbosity):
     assert os.path.isfile(os.path.join(work_dir, 'log_file.txt')), 'log_file was not created.'
 
 
-def test_slurm_mcmc_with_restart(work_dir, verbosity):
+def test_slurm_mcmc_with_restart(work_dir, verbosity, seed):
     num_params = 2
     num_walkers = 10
     num_iters = 3
@@ -131,7 +135,7 @@ def test_slurm_mcmc_with_restart(work_dir, verbosity):
     assert restart_2['ini_iter'] == 2 * num_iters
 
 
-def test_slurm_mcmc_init_log_prob_fun_values(work_dir, verbosity):
+def test_slurm_mcmc_init_log_prob_fun_values(verbosity, seed):
     num_params = 2
     num_walkers = 10
     num_iters = 3
@@ -149,7 +153,7 @@ def test_slurm_mcmc_init_log_prob_fun_values(work_dir, verbosity):
     assert sampler.pool.num_calls == 6
 
 
-def test_slurm_mcmc_with_extra_arg_localmap(work_dir, verbosity):
+def test_slurm_mcmc_with_extra_arg_localmap(verbosity, seed):
     num_params = 2
     num_walkers = 5
     num_iters = 2
@@ -161,7 +165,7 @@ def test_slurm_mcmc_with_extra_arg_localmap(work_dir, verbosity):
                          cluster='local-map')
 
 
-def test_slurm_mcmc_with_extra_arg_local(work_dir, verbosity):
+def test_slurm_mcmc_with_extra_arg_local(work_dir, verbosity, seed):
     num_params = 2
     num_walkers = 5
     num_iters = 2
