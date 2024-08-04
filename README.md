@@ -32,8 +32,7 @@ pytest tests/test_file.py::TestClassName::test_method_name
 The algorithms used are based on parallel evaluations of functions, which we want to perform on Slurm-managed cluster.
 The run options determined by the  `cluster` argument whose options are:
 * `'slurm'`: parallel evaluations using jobs submitted to Slurm via [``submitit``](https://github.com/facebookincubator/submitit).
-* `'local'`: parallel evaluations using local processes, also via [``submitit``](https://github.com/facebookincubator/submitit).
-* (on the same directories structure as in `'slurm'`, useful for debugging).
+* `'local'`: parallel evaluations using local processes, also via [``submitit``](https://github.com/facebookincubator/submitit) (on the same directories structure as in `'slurm'`, useful for debugging).
 * `'local-map'`: evaluate function in-line sequentially on multiple points. Useful for analytic functions where 
 parallelization is less important, for demonstrations and for debugging. 
 This mode is used in the examples below for quick evaluations.
