@@ -27,15 +27,23 @@ Run a specific test
 pytest tests/test_file.py::TestClassName::test_method_name
 ```
 
+## Parallelization
+
+The algorithms used are based on parallel evaluations of functions, which we want to perform on Slurm-managed cluster.
+The run options determined by the  `cluster` argument whose options are:
+* `'slurm'`: parallel evaluations using jobs submitted to Slurm via [``submitit``](https://github.com/facebookincubator/submitit).
+* `'local'`: parallel evaluations using local processes, also via [``submitit``](https://github.com/facebookincubator/submitit).
+* (on the same directories structure as in `'slurm'`, useful for debugging).
+* `'local-map'`: evaluate function in-line sequentially on multiple points. Useful for analytic functions where 
+parallelization is less important, for demonstrations and for debugging. 
+This mode is used in the examples below for quick evaluations.
+
+
 ## Examples
-
-Quick how to use in the examples folder, that create the plots shown below.
-
-The examples do not use Slurm but emulate it for quick evaluations (using `cluster='local-map'` instead of `'local'` or `'slurm'`).
 
 ### Optimization
 
-This example follows [example_optimization.py](examples/example_optimization.py).
+This example's plots are generated using [example_optimization.py](examples/example_optimization.py).
 
 We choose the loss function as the 2d-rosenbrock function, with a circle constraint. 
 The parallel optimization algorithm used in this case is [Differential Evolution](https://en.wikipedia.org/wiki/Differential_evolution) via [``nevergrad``](https://github.com/facebookresearch/nevergrad)
@@ -50,7 +58,7 @@ Progression of the loss with the number of iterations:
 
 ### Bayesian analysis (MCMC)
 
-This example follows [example_mcmc.py](examples/example_mcmc.py).
+This example's plots are generated using [example_mcmc.py](examples/example_mcmc.py).
 
 We choose the log-probability function as minus the 2d-rosenbrock function, with zero probability assigned outside of the constraint circle.
 The parallel MCMC algorithm via [``emcee``](https://github.com/dfm/emcee).
