@@ -3,7 +3,7 @@ import os
 import numpy as np
 import pytest
 
-from slurmcmc.general_utils import delete_directory
+from slurmcmc.general_utils import delete_directory, point_to_tuple
 from slurmcmc.slurm_utils import SlurmPool
 
 
@@ -109,10 +109,23 @@ def test_slurmpool_localmap_with_budget(verbosity):
 def test_slurmpool_local(work_dir, verbosity):
     slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity)
     fun = lambda x: x ** 2
-    points = [2, 3, 4]
-    res_expected = [fun(point) for point in points]
-    res = slurm_pool.map(fun, points)
-    assert res == res_expected
+    points_1 = [2, 3, 4]
+    res_expected_1 = [fun(point) for point in points_1]
+    res_1 = slurm_pool.map(fun, points_1)
+    assert res_1 == res_expected_1
+
+    points_2 = [5, 6, 7]
+    res_expected_2 = [fun(point) for point in points_2]
+    res_2 = slurm_pool.map(fun, points_2)
+    assert res_2 == res_expected_2
+
+    # test evaluated_points_set and point_loc_dict features of slurm_pool
+    assert len(slurm_pool.evaluated_points_set) == len(points_1) + len(points_2)
+    assert len(slurm_pool.point_loc_dict) == len(points_1) + len(points_2)
+    point_first = slurm_pool.points_history[0]
+    assert slurm_pool.point_loc_dict[point_to_tuple(point_first)] == (0, 0)
+    point_last = slurm_pool.points_history[-1]
+    assert slurm_pool.point_loc_dict[point_to_tuple(point_last)] == (1, len(points_2) - 1)
 
 
 def test_slurmpool_local_2params(work_dir, verbosity):

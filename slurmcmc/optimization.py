@@ -5,7 +5,7 @@ import nevergrad as ng
 import numpy as np
 
 from slurmcmc.botorch_optimizer import BoTorchOptimizer
-from slurmcmc.general_utils import set_logging, save_restart_file, load_restart_file, combine_args
+from slurmcmc.general_utils import set_logging, save_restart_file, load_restart_file, combine_args, point_to_tuple
 from slurmcmc.slurm_utils import SlurmPool
 
 
@@ -39,7 +39,6 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
             num_loss_fun_calls_total = status['num_loss_fun_calls_total']
             num_constraint_fun_calls_total = status['num_constraint_fun_calls_total']
             num_asks_total = status['num_asks_total']
-            evaluated_points = status['evaluated_points']
             candidates_ask_time_per_iter = status['candidates_ask_time_per_iter']
 
     else:
@@ -74,7 +73,6 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         num_loss_fun_calls_total = 0
         num_constraint_fun_calls_total = 0
         num_asks_total = 0
-        evaluated_points = set()
         loss_min_per_iter = []
         loss_min_all_iter = []
         loss_min = np.inf
@@ -108,6 +106,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         else:
             candidates = []
             candidates_nevergrad = []
+            candidates_set = set()
             num_asks = 0
             while len(candidates) < num_workers:
                 if optimizer_package == 'nevergrad':
@@ -129,8 +128,9 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                                      ', having trouble finding candidates that pass constraints.')
 
                 for candidate in candidates_batch:
-                    candidate_tuple = tuple(candidate)
-                    if candidate_tuple not in evaluated_points:
+                    candidate_tuple = point_to_tuple(candidate)
+                    if (candidate_tuple not in slurm_pool.evaluated_points_set
+                            and candidate_tuple not in candidates_set):
                         if constraint_fun is not None:
                             constraint_passed = constraint_fun(*combine_args(candidate, extra_arg)) <= 0
                             num_constraint_fun_calls_total += 1
@@ -138,7 +138,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                         if constraint_fun is not None and not constraint_passed:
                             pass
                         else:
-                            evaluated_points.add(candidate_tuple)
+                            candidates_set.add(candidate_tuple)
                             candidates += [candidate]
                             if optimizer_package == 'nevergrad':
                                 candidates_nevergrad += [candidate_nevergrad]
@@ -193,7 +193,6 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         status['num_loss_fun_calls_total'] = num_loss_fun_calls_total
         status['num_constraint_fun_calls_total'] = num_constraint_fun_calls_total
         status['num_asks_total'] = num_asks_total
-        status['evaluated_points'] = evaluated_points
         status['candidates_ask_time_per_iter'] = candidates_ask_time_per_iter
 
         if save_restart:

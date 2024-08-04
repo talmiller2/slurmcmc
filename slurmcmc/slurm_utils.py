@@ -4,7 +4,7 @@ import os
 import numpy as np
 import submitit
 
-from slurmcmc.general_utils import combine_args, set_logging, save_extra_arg_to_file
+from slurmcmc.general_utils import combine_args, set_logging, save_extra_arg_to_file, point_to_tuple
 
 
 class SlurmPool():
@@ -22,6 +22,8 @@ class SlurmPool():
         self.points_history = []
         self.values_history = []
         self.failed_points_history = []
+        self.evaluated_points_set = set()
+        self.point_loc_dict = {}
         self.work_dir = work_dir
         self.job_name = job_name
         self.job_params = job_params
@@ -76,6 +78,12 @@ class SlurmPool():
             res = [fun(*self._combine_args(point)) for point in points]
         else:
             res = self.send_and_receive_jobs(fun, points)
+
+        # track if point was previously evaluated
+        for point in points:
+            point_tuple = point_to_tuple(point)
+            if point_tuple not in self.evaluated_points_set:
+                self.evaluated_points_set.add(point_tuple)
 
         self.num_calls += 1
 
@@ -141,6 +149,11 @@ class SlurmPool():
             point_dirs += [point_dir]
             os.makedirs(point_dir, exist_ok=True)
             np.savetxt(point_dir + '/input.txt', [point])
+
+            # track location of point calculation
+            point_tuple = point_to_tuple(point)
+            if point_tuple not in self.evaluated_points_set:
+                self.point_loc_dict[point_tuple] = (self.num_calls, ind_point)
 
         # save current iteration points in the main iteration_dir
         np.savetxt(iteration_dir + '/inputs.txt', np.array(points))

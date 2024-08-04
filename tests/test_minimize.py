@@ -147,7 +147,6 @@ def test_slurm_minimize_2params_with_constraint_from_init_points(verbosity, seed
     expected_minima_point = np.ones(num_params)
     num_workers = 10
     num_iters = 40
-    np.random.seed(0)
 
     init_points = [np.array([-1, -1]) + np.random.rand(2) for _ in range(num_workers)]
     result = slurm_minimize(loss_fun=loss_fun, constraint_fun=constraint_fun, init_points=init_points,
