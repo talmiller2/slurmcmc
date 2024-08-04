@@ -68,6 +68,13 @@ def test_slurm_mcmc_local(work_dir, verbosity, seed):
                          verbosity=verbosity, slurm_vebosity=verbosity,
                          work_dir=work_dir, cluster='local')
 
+    # test mcmc_points_set and points_weights_dict features of mcmc
+    assert len(sampler.pool.points_history) == num_walkers * (num_iters + 1)
+    sum_weights = 0
+    for mcmc_point in sampler.points_weights_dict.keys():
+        sum_weights += sampler.points_weights_dict[mcmc_point]
+    assert sum_weights == num_walkers * num_iters
+
 
 def test_slurm_mcmc_with_budget(verbosity, seed):
     num_params = 2

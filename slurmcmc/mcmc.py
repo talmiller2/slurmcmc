@@ -3,7 +3,8 @@ import logging
 import emcee
 import numpy as np
 
-from slurmcmc.general_utils import set_logging, save_restart_file, load_restart_file, save_extra_arg_to_file
+from slurmcmc.general_utils import (set_logging, save_restart_file, load_restart_file, save_extra_arg_to_file,
+                                    point_to_tuple)
 from slurmcmc.slurm_utils import SlurmPool
 
 
@@ -23,12 +24,10 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
             logging.info('loading restart file: ' + work_dir + '/' + restart_file)
 
             status = load_restart_file(work_dir, restart_file)
-            initial_state = status['state']
             sampler = status['sampler']
             slurm_pool = status['slurm_pool']
             sampler.pool = slurm_pool
             ini_iter = status['ini_iter']
-
     else:
         # using extra_arg=None because emcee deals with extra_arg internally by wrapping the function
         slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, extra_arg=None, **slurm_dict)
@@ -52,12 +51,23 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
             sampler.initial_state = emcee.State(init_points, log_prob=np.array(init_log_prob_fun_values))
 
         ini_iter = 0
+        sampler.mcmc_points_set = set()
+        sampler.points_weights_dict = {}
 
     for curr_iter in range(ini_iter, ini_iter + num_iters):
         if verbosity >= 1:
             logging.info('### curr mcmc iter: ' + str(curr_iter))
         state = sampler.run_mcmc(initial_state=sampler.initial_state, nsteps=1, progress=progress)
         sampler.initial_state = state
+
+        # track the points in the mcmc set and their weight
+        for point in state.coords:
+            point_tuple = point_to_tuple(point)
+            if point_tuple not in sampler.mcmc_points_set:
+                sampler.mcmc_points_set.add(point_tuple)
+                sampler.points_weights_dict[point_tuple] = 1  # initialize
+            else:
+                sampler.points_weights_dict[point_tuple] += 1
 
         if save_restart:
             if verbosity >= 3:
