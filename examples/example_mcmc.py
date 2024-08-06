@@ -1,9 +1,10 @@
+import corner
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.pyplot import cm
 from scipy.optimize import rosen
 
-from slurmcmc.mcmc import slurm_mcmc
+from slurmcmc.mcmc import slurm_mcmc, get_gelman_rubin_statistic
 
 plt.close('all')
 plt.interactive(True)
@@ -43,50 +44,69 @@ def log_prob_with_constraint(x):
 
 
 num_params = 2
-num_walkers = 20
-num_iters = 200
-print('num of slurmpool calls should be', num_walkers / 2 * (num_iters + 1))
+num_walkers = 10
+num_iters = 10000
 
 # initial points chosen to satisfy constraint
 init_points = (np.array([[x0_constraint, y0_constraint] for _ in range(num_walkers)])
                + (r_constraint * (np.random.rand(num_walkers, num_params) - 0.5)))
+# init_points = (np.array([minima for _ in range(num_walkers)])
+#                + 0.5 * np.random.randn(num_walkers, num_params))
 
 # log_prob_fun = log_prob
 log_prob_fun = log_prob_with_constraint
 sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                     cluster='local-map',
-                     )
+                     cluster='local-map', verbosity=0)
 
-# print('acceptance fractions:', sampler.acceptance_fraction)
 print("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler.acceptance_fraction)))
 
 tau = sampler.get_autocorr_time(quiet=True)
-print("Mean autocorrelation time: {0:.3f} steps".format(np.mean(tau)))
+print("Autocorrelation time (tau) per paramter:", [np.round(t, 2) for t in tau])
 
-# burnin = int(np.max(tau))
-# thin = int(np.min(tau))
-burnin = 0
 thin = 1
+# burnin = 0
+burnin = int(2 * np.max(tau))
+
+if burnin > 0:
+    tau = sampler.get_autocorr_time(discard=burnin, thin=thin, quiet=True)
+    print("Post burn-in, autocorrelation time (tau) per parameter:", [np.round(t, 2) for t in tau])
+
 samples = sampler.get_chain(discard=burnin, thin=thin)
 samples_flat = sampler.get_chain(discard=burnin, thin=thin, flat=True)
 
-# plot mcmc chains
-fig, axes = plt.subplots(nrows=num_params, figsize=(10, 7), sharex=True, num=1)
+# Effective Sample Size (ESS)
+num_steps = samples.shape[0]
+ESS = num_steps / tau
+print("Effective Sample Size (ESS) per parameter:", [np.round(e, 2) for e in ESS])
+
+# Gelman-Rubin statistic
+GR_statistic = get_gelman_rubin_statistic(samples)
+print('Gelman-Rubin statistic per parameter:', [np.round(g, 3) for g in GR_statistic])
+
+# plot mcmc chains evolution
+fig, axes = plt.subplots(nrows=num_params, figsize=(10, 7), sharex=True)
 labels = ["x", "y"]
 color_list = cm.rainbow(np.linspace(0, 1, num_walkers))
 for i in range(num_params):
     ax = axes[i]
     for j in range(num_walkers):
-        ax.plot(samples[:, j, i], alpha=0.5, color=color_list[j])
+        if j == 0:  # add MCMC statistics information to the plots
+            label = '$\\tau$={0:d}, ESS={1:.2f}, GR={2:.3f}'.format(int(tau[i]), ESS[i], GR_statistic[i])
+        else:
+            label = None
+        ax.plot(samples[:, j, i], alpha=0.5, color=color_list[j], label=label)
     ax.set_ylabel(labels[i])
+    ax.legend(loc='lower right')
+
 axes[-1].set_xlabel('# iteration')
 axes[0].set_title('evolution of the parameters in different mcmc chains')
+plt.tight_layout()
 
 if save_plots:
     plt.savefig('example_mcmc_chains_progress')
 
 # loss_fun 2d plot
-plt.figure(2, figsize=(8, 7))
+plt.figure(figsize=(8, 7))
 x = np.linspace(param_bounds[0][0], param_bounds[0][1], 100)
 y = np.linspace(param_bounds[1][0], param_bounds[1][1], 100)
 X, Y = np.meshgrid(x, y)
@@ -103,9 +123,9 @@ plt.ylabel('y')
 plt.title('log probability function: rosenbrock')
 
 # plot points sampled during mcmc
-plt.scatter(sampler.pool.points_history[:, 0], sampler.pool.points_history[:, 1], c='k', marker='o', s=10, alpha=0.5)
+plt.scatter(sampler.pool.points_history[:, 0], sampler.pool.points_history[:, 1], c='k', marker='o', s=10, alpha=0.1)
 # plot points accepted during mcmc
-plt.scatter(samples_flat[:, 0], samples_flat[:, 1], c='r', marker='o', s=10, alpha=0.5)
+plt.scatter(samples_flat[:, 0], samples_flat[:, 1], c='r', marker='o', s=10, alpha=0.1)
 plt.tight_layout()
 
 # plot analytic minima point for reference
@@ -122,9 +142,7 @@ if save_plots:
     plt.savefig('example_mcmc_2d_visualization')
 
 # emcee corner plot
-import corner
-
-fig = plt.figure(num=3, figsize=(7, 7))
+fig = plt.figure(figsize=(7, 7))
 corner.corner(samples_flat, labels=labels, color='k', truths=minima, truth_color='r', fig=fig, labelpad=-0.1)
 plt.suptitle('mcmc parameters distribution')
 plt.tight_layout()

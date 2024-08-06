@@ -49,7 +49,7 @@ The parallel optimization algorithm used in this case is [Differential Evolution
 (other parallel optimization options are [Particle Swarm Optimization](https://en.wikipedia.org/wiki/Particle_swarm_optimization) via [``nevergrad``](https://github.com/facebookresearch/nevergrad) 
 or [Bayesian Optimization](https://en.wikipedia.org/wiki/Bayesian_optimization) via [``botorch``](https://github.com/pytorch/botorch)).
 
-Progression of the loss with the number of iterations:
+We pick 10 workers times 30 iterations. Progression of the loss with the number of iterations:
 ![example_optimization_loss_progress](examples/pics/example_optimization_loss_progress.png)
 
 2d visualization of the loss function, the circle constraint (white line), and the points approaching (dark to bright) the minima (marked by a star):
@@ -59,13 +59,24 @@ Progression of the loss with the number of iterations:
 
 This example's plots are generated using [example_mcmc.py](examples/example_mcmc.py).
 
-We choose the log-probability function as minus the 2d-rosenbrock function, with zero probability assigned outside of the constraint circle.
-The parallel MCMC algorithm via [``emcee``](https://github.com/dfm/emcee).
+We choose the log-probability function as minus the 2d-rosenbrock function, with zero probability assigned outside of 
+the constraint circle.
+The parallel ensemble MCMC algorithm is via [``emcee``](https://github.com/dfm/emcee).
 
-We pick the initial points to initiate the MCMC chains at random, but a for an expensive black-box query in higher dimension an optimization should be done first, and the initial points chosen around the minima.
+We pick the initial points to initiate the MCMC chains at random, but a for an expensive black-box query in higher 
+dimension an optimization should be done first, and the initial points chosen around the minima.
 
-Progress of the chains with iterations (without burn-in or thinning):
+We pick 10 workers times 10,000 iterations. 
+Progress of the chains with iterations (after some burn-in):
 ![example_mcmc_chains_progress](examples/pics/example_mcmc_chains_progress.png)
+
+The relevant diagnostic of the convergence of the MCMC is the Effective Sample Size (ESS), meaning the length of the 
+chain over the autocorrelation time τ (calculated using `emcee`'s `get_autocorr_time` function). The ESS is advised 
+in the [emcee docs](https://emcee.readthedocs.io/en/stable/tutorials/autocorr/) to be over 50 for convergence.
+The [Gelman-Rubin statistic](https://pymcmc.readthedocs.io/en/latest/modelchecking.html) is not relevant in this case 
+because the chains are inherently correlated in the algorithm, but it can be a supplamentary diagnostic. 
+All the mentioned metrics are shown per parameter in the legend of the figure above.
+
 
 2d visualization of the points visited by the algorithm (black) and the points accepted to the MCMC samples set (red):
 ![example_mcmc_2d_visualization](examples/pics/example_mcmc_2d_visualization.png)

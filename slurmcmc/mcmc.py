@@ -77,3 +77,40 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
             sampler.pool = slurm_pool  # need to redefine the pool because pickling removes sampler.pool
 
     return sampler
+
+
+def get_gelman_rubin_statistic(chains):
+    """
+    Calculate the Gelman-Rubin statistic for MCMC chains.
+    Not really relevant for correlated chains as in the emcee algorithm, for more read:
+    https://emcee.readthedocs.io/en/stable/tutorials/autocorr/
+
+    Parameters:
+    chains: np.ndarray of shape (nwalkers, nsteps, ndim)
+        The MCMC samples from the emcee package.
+
+    Returns:
+    R_hat: np.ndarray of shape (ndim,)
+        The Gelman-Rubin statistic for each parameter.
+    """
+    nsteps, nwalkers, ndim = chains.shape
+
+    # Mean of each chain
+    chain_means = np.mean(chains, axis=0)  # shape (nwalkers, ndim)
+
+    # Variance of each chain
+    chain_variances = np.var(chains, axis=0, ddof=1)  # shape (nwalkers, ndim)
+
+    # Overall mean of chain variances
+    W = np.mean(chain_variances, axis=0)  # shape (ndim,)
+
+    # Between-chain variance (variance of the means of the chains, multiplied by an extra factor of nsteps)
+    B = nsteps * np.var(chain_means, axis=0, ddof=1)  # shape (ndim,)
+
+    # Estimate of the marginal posterior variance
+    var_hat = W * (nsteps - 1) / nsteps + B / nsteps
+
+    # calculate the potential scale reduction factor
+    R_hat = np.sqrt(var_hat / W)
+
+    return R_hat
