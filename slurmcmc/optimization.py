@@ -28,6 +28,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
 
             status = load_restart_file(work_dir, restart_file)
             optimizer = status['optimizer']
+            optimizer_package = status['optimizer_package']
             x_min = status['x_min']
             loss_min_per_iter = status['loss_min_per_iter']
             loss_min_all_iter = status['loss_min_all_iter']
@@ -64,6 +65,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                     botorch_kwargs[key] = value
 
             optimizer = optimizer_class(lower_bounds, upper_bounds, num_workers, **botorch_kwargs)
+
         else:
             raise ValueError('invalid optimizer_package:', optimizer_package)
 
@@ -182,6 +184,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         # optimization status
         status = {}
         status['optimizer'] = optimizer
+        status['optimizer_package'] = optimizer_package
         status['x_min'] = x_min
         status['loss_min_per_iter'] = loss_min_per_iter
         status['loss_min_all_iter'] = loss_min_all_iter

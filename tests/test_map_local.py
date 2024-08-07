@@ -23,17 +23,25 @@ def verbosity():
     return 1
 
 
-def fun_with_extra_arg(x, weather):
-    if weather == 'sunny':
-        return x ** 2
-    else:
-        return x + 30
+@pytest.fixture()
+def fun_with_extra_arg():
+    def _fun_with_extra_arg(x, weather):
+        if weather == 'sunny':
+            return x ** 2
+        else:
+            return x + 30
+
+    return _fun_with_extra_arg
 
 
-def fun_that_writes_file(x):
-    with open('test_file.txt', 'a') as log_file:
-        print(x, file=log_file)
-    return x[0] ** 2 + x[1] ** 2
+@pytest.fixture()
+def fun_that_writes_file():
+    def _fun_that_writes_file(x):
+        with open('test_file.txt', 'a') as log_file:
+            print(x, file=log_file)
+        return x[0] ** 2 + x[1] ** 2
+
+    return _fun_that_writes_file
 
 
 def test_slurmpool_localmap(verbosity):
@@ -144,7 +152,7 @@ def test_slurmpool_local_2params_with_log_file(work_dir, verbosity):
     slurm_pool.map(fun, points)
 
 
-def test_slurmpool_local_2params_check_query_dir(work_dir, verbosity):
+def test_slurmpool_local_2params_check_query_dir(work_dir, verbosity, fun_that_writes_file):
     slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity)
     points = [[2, 3], [3, 4], [4, 5]]
     slurm_pool.map(fun_that_writes_file, points)
@@ -184,7 +192,7 @@ def test_slurmpool_localmap_2params_3outputs_history_with_failed_points(verbosit
     np.testing.assert_array_equal(slurm_pool.failed_points_history, np.vstack([points, points]))
 
 
-def test_slurmpool_localmap_with_extra_arg(verbosity):
+def test_slurmpool_localmap_with_extra_arg(verbosity, fun_with_extra_arg):
     for weather in ['sunny', 'rainy', None]:
         slurm_pool = SlurmPool(cluster='local-map', verbosity=verbosity, extra_arg=weather)
         points = [1, 2, 3]
@@ -197,7 +205,7 @@ def test_slurmpool_localmap_with_extra_arg(verbosity):
             assert res == res_expected
 
 
-def test_slurmpool_local_with_extra_arg(work_dir, verbosity):
+def test_slurmpool_local_with_extra_arg(work_dir, verbosity, fun_with_extra_arg):
     weather = 'sunny'
     slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity, extra_arg=weather)
     points = [1, 2, 3]
