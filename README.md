@@ -19,12 +19,12 @@ pip install -e .
 
 Run tests from root project folder using:
 ```
-pytest tests
+pytest -vv tests
 ```
 
-Run a specific test
+To run a specific test, for example
 ```
-pytest tests/test_file.py::TestClassName::test_method_name
+pytest -vv tests/test_map_local.py::test_slurmpool_localmap
 ```
 
 ## Parallelization
