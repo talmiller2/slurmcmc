@@ -63,20 +63,30 @@ We choose the log-probability function as minus the 2d-rosenbrock function, with
 the constraint circle.
 The parallel ensemble MCMC algorithm is via [``emcee``](https://github.com/dfm/emcee).
 
-We pick the initial points to initiate the MCMC chains at random, but a for an expensive black-box query in higher 
+We pick the initial points to initiate the MCMC chains (or workers) at random, but a for an expensive black-box query in higher 
 dimension an optimization should be done first, and the initial points chosen around the minima.
 
-We pick 10 workers times 10,000 iterations. 
+We pick $N_c=10$ chains times $L_c=10^4$ iterations per chain. 
 Progress of the chains with iterations (after some burn-in):
 ![example_mcmc_chains_progress](examples/pics/example_mcmc_chains_progress.png)
 
-The relevant diagnostic of the convergence of the MCMC is the Effective Sample Size (ESS), meaning the length of the 
-chain over the autocorrelation time τ (calculated using `emcee`'s `get_autocorr_time` function). The ESS is advised 
-in the [emcee docs](https://emcee.readthedocs.io/en/stable/tutorials/autocorr/) to be over 50 for convergence.
-The [Gelman-Rubin statistic](https://pymcmc.readthedocs.io/en/latest/modelchecking.html) is not relevant in this case 
-because the chains are inherently correlated in the algorithm, but it can be a supplamentary diagnostic. 
-All the mentioned metrics are shown per parameter in the legend of the figure above.
+The MCMC results require testing convergence diagnostics, as discussed in the [emcee docs](https://emcee.readthedocs.io/en/stable/tutorials/autocorr/):
 
+* The integrated auto-correlation time $\tau$ needs to be calculated (per parameter). 
+It is advised that the length of each chain $L_c$ to be over $50\tau$ to trust the estimation.
+(note that $\tau$ itself usually increases with $L_c$ until it saturates and converges so $L_c/\tau$ 
+does not simply rise proportionally to $L_c$)
+In `emcee` the calculation of $\tau$ uses all parallel chains to increase the estimation accuracy, 
+but additional chains not necessarily help $\tau$ converge with less $L_c$.
+
+* The effective sample size (ESS) defined as the total number of samples divided by the 
+auto-correlation time $ESS=N_{total}/\tau=N_c*L_c/\tau$ is advised to be 10-100 times the number of parameters.
+In this case the ESS will scale proportionally to the number of parallel chains $N_c$.
+
+* The [Gelman-Rubin statistic](https://pymcmc.readthedocs.io/en/latest/modelchecking.html) should be close to 1, but it is not relevant for the ensemble MCMC algorithm 
+because the chains are inherently correlated, so it can be a supplamentary diagnostic. 
+
+All the mentioned metrics are shown per parameter in the legend of the figure above.
 
 2d visualization of the points visited by the algorithm (black) and the points accepted to the MCMC samples set (red):
 ![example_mcmc_2d_visualization](examples/pics/example_mcmc_2d_visualization.png)

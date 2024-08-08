@@ -74,9 +74,12 @@ if burnin > 0:
 samples = sampler.get_chain(discard=burnin, thin=thin)
 samples_flat = sampler.get_chain(discard=burnin, thin=thin, flat=True)
 
+# integrated auto-correlation time multiples per chain
+tau_multiples = num_iters / tau
+
 # Effective Sample Size (ESS)
 num_steps = samples.shape[0]
-ESS = num_steps / tau
+ESS = num_walkers * num_steps / tau
 print("Effective Sample Size (ESS) per parameter:", [np.round(e, 2) for e in ESS])
 
 # Gelman-Rubin statistic
@@ -91,7 +94,8 @@ for i in range(num_params):
     ax = axes[i]
     for j in range(num_walkers):
         if j == 0:  # add MCMC statistics information to the plots
-            label = '$\\tau$={0:d}, ESS={1:.2f}, GR={2:.3f}'.format(int(tau[i]), ESS[i], GR_statistic[i])
+            label = ('$\\tau$={0:.1f}, $L_c/\\tau$={1:.1f}, ESS={2:.1f}, GR={3:.3f}'
+                     .format(tau[i], tau_multiples[i], ESS[i], GR_statistic[i]))
         else:
             label = None
         ax.plot(samples[:, j, i], alpha=0.5, color=color_list[j], label=label)
