@@ -46,11 +46,10 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         # param_bounds is a list (length num_params) that contains the lower and upper bounds per parameter
         lower_bounds = [b[0] for b in param_bounds]
         upper_bounds = [b[1] for b in param_bounds]
-        num_params = len(lower_bounds)
         budget = num_iters * num_workers
 
         if optimizer_package == 'nevergrad':
-            instrum = ng.p.Instrumentation(ng.p.Array(shape=(num_params,))
+            instrum = ng.p.Instrumentation(ng.p.Array(init=[(l + u) / 2 for l, u in zip(lower_bounds, upper_bounds)])
                                            .set_bounds(lower=lower_bounds, upper=upper_bounds))
             if optimizer_class is None:
                 optimizer_class = ng.optimizers.DifferentialEvolution(crossover="twopoints", popsize=num_workers)
