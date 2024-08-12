@@ -32,6 +32,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
             x_min = status['x_min']
             loss_min_per_iter = status['loss_min_per_iter']
             loss_min_all_iter = status['loss_min_all_iter']
+            num_workers_per_iter = status['num_workers_per_iter']
             loss_min = status['loss_min']
             loc_point_min_per_iter = status['loc_point_min_per_iter']
             loc_point_min_all_iter = status['loc_point_min_all_iter']
@@ -76,6 +77,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         num_asks_total = 0
         loss_min_per_iter = []
         loss_min_all_iter = []
+        num_workers_per_iter = []
         loss_min = np.inf
         loc_point_min_per_iter = []
         candidates_ask_time_per_iter = []
@@ -175,6 +177,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
             loc_point_min_all_iter = curr_iter_loc_point_min
         loss_min_all_iter += [loss_min]
         loss_min_per_iter += [curr_iter_loss_min]
+        num_workers_per_iter += [num_workers]
         loc_point_min_per_iter += [curr_iter_loc_point_min]
 
         if verbosity >= 2:
@@ -187,6 +190,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         status['x_min'] = x_min
         status['loss_min_per_iter'] = loss_min_per_iter
         status['loss_min_all_iter'] = loss_min_all_iter
+        status['num_workers_per_iter'] = num_workers_per_iter
         status['loss_min'] = loss_min
         status['loc_point_min_per_iter'] = loc_point_min_per_iter
         status['loc_point_min_all_iter'] = loc_point_min_all_iter

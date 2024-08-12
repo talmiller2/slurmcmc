@@ -128,13 +128,13 @@ loss_history = result['slurm_pool'].values_history[:, 0]
 point_num_array = [i for i in range(len(loss_history))]
 loss_min_all_iter = result['loss_min_all_iter']
 loss_min_per_iter = result['loss_min_per_iter']
-iter_num_array = [(i + 1) * num_workers for i in range(len(loss_min_all_iter))]
-iter_num_array = [(i + 1) * num_workers for i in range(len(loss_min_all_iter))]
+num_workers_per_iter = result['num_workers_per_iter']
+iter_num_array = np.cumsum(result['num_workers_per_iter'])
 
 plt.figure(2, figsize=(8, 5))
 plt.plot(point_num_array, loss_history, '.b', label='all samples')
-plt.plot(iter_num_array, loss_min_per_iter, '-og', label='min per iter')
-plt.plot(iter_num_array, loss_min_all_iter, '-or', label='min overall')
+plt.plot(iter_num_array, result['loss_min_all_iter'], '-og', label='min per iter')
+plt.plot(iter_num_array, result['loss_min_per_iter'], '-or', label='min overall')
 plt.yscale('log')
 plt.xlabel('# point sample')
 plt.ylabel('loss')
