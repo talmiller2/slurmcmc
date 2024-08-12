@@ -87,8 +87,9 @@ but additional chains do not necessarily help $\tau$ converge faster (with small
 auto-correlation time $ESS=N_{total}/\tau=N_c \times L_c/\tau$ is advised to be 10-100 times the number of parameters.
 In this case the ESS will scale proportionally to the number of parallel chains $N_c$.
 
-* The [Gelman-Rubin statistic](https://pymcmc.readthedocs.io/en/latest/modelchecking.html) usually should be close to 1, but it is not relevant for the ensemble MCMC algorithm 
-because the chains are inherently correlated, so it can be a supplamentary diagnostic. 
+* The [Gelman-Rubin statistic](https://pymcmc.readthedocs.io/en/latest/modelchecking.html) is another convergence metric that approaches 1 when converged. However, it is not 
+relevant for the ensemble MCMC algorithm because the chains are inherently correlated, but it can be a supplamentary 
+diagnostic. 
 
 All the mentioned metrics are shown per parameter in the legend of the figure above.
 
