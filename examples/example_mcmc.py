@@ -1,4 +1,5 @@
 import corner
+import emcee
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.pyplot import cm
@@ -88,7 +89,7 @@ print('Gelman-Rubin statistic per parameter:', [np.round(g, 3) for g in GR_stati
 
 # plot mcmc chains evolution
 fig, axes = plt.subplots(nrows=num_params, figsize=(10, 7), sharex=True)
-labels = ["x", "y"]
+param_labels = ["x", "y"]
 color_list = cm.rainbow(np.linspace(0, 1, num_walkers))
 for i in range(num_params):
     ax = axes[i]
@@ -99,7 +100,7 @@ for i in range(num_params):
         else:
             label = None
         ax.plot(samples[:, j, i], alpha=0.5, color=color_list[j], label=label)
-    ax.set_ylabel(labels[i])
+    ax.set_ylabel(param_labels[i])
     ax.legend(loc='lower right')
 
 axes[-1].set_xlabel('# iteration')
@@ -147,9 +148,48 @@ if save_plots:
 
 # emcee corner plot
 fig = plt.figure(figsize=(7, 7))
-corner.corner(samples_flat, labels=labels, color='k', truths=minima, truth_color='r', fig=fig, labelpad=-0.1)
+corner.corner(samples_flat, labels=param_labels, color='k', truths=minima, truth_color='r', fig=fig, labelpad=-0.1)
 plt.suptitle('mcmc parameters distribution')
 plt.tight_layout()
 
 if save_plots:
     plt.savefig('example_mcmc_parameters_distribution')
+
+# plot metrics for mcmc convergence
+metrics = ['tau', 'tau_multiples', 'ESS', 'GR']
+metric_labels = ['$\\tau$', '$L_c/\\tau$', '$ESS$', '$GR$']
+diagnostics = {}
+num_iters_interval = 500
+nun_iters_list = np.arange(num_iters_interval, num_iters, num_iters_interval)
+for metric in metrics:
+    diagnostics[metric] = []
+    for ind_n, n in enumerate(nun_iters_list):
+        if metric == 'tau':
+            diagnostics[metric] += [emcee.autocorr.integrated_time(samples[:n], quiet=True)]
+        elif metric == 'tau_multiples':
+            diagnostics[metric] += [n / diagnostics['tau'][ind_n]]
+        elif metric == 'ESS':
+            diagnostics[metric] += [num_walkers * diagnostics['tau_multiples'][ind_n]]
+        elif metric == 'GR':
+            diagnostics[metric] += [get_gelman_rubin_statistic(samples[:n])]
+    diagnostics[metric] = np.array(diagnostics[metric])
+
+plt.figure(figsize=(8, 7))
+param_colors = ['b', 'r']
+for ind_metric, (metric, metric_label) in enumerate(zip(metrics, metric_labels)):
+    plt.subplot(len(metrics), 1, ind_metric + 1)
+    for ind_param, param_label in enumerate(param_labels):
+        plt.plot(nun_iters_list, diagnostics[metric][:, ind_param], '-o',
+                 label=param_label, color=param_colors[ind_param])
+        plt.ylabel(metric_label)
+        plt.grid(True)
+        if ind_metric == len(metrics) - 1:
+            plt.legend()
+        else:
+            plt.gca().set_xticklabels([])
+plt.xlabel('# iteration')
+plt.suptitle('convergence diagnostics')
+plt.tight_layout()
+
+if save_plots:
+    plt.savefig('example_mcmc_convergence_diagnostics')

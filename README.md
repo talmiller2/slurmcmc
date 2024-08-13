@@ -91,7 +91,11 @@ In this case the ESS will scale proportionally to the number of parallel chains 
 relevant for the ensemble MCMC algorithm because the chains are inherently correlated, but it can be a supplamentary 
 diagnostic. 
 
-All the mentioned metrics are shown per parameter in the legend of the figure above.
+All the mentioned metrics are shown per parameter in the legend of the figure above, and their dependence on the chain 
+length $L_c$:
+
+![example_mcmc_convergence_diagnostics](examples/pics/example_mcmc_convergence_diagnostics.png)
+
 
 2d visualization of the points visited by the algorithm (black) and the points accepted to the MCMC samples set (red):
 ![example_mcmc_2d_visualization](examples/pics/example_mcmc_2d_visualization.png)
