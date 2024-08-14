@@ -123,8 +123,8 @@ plt.pcolormesh(X, Y, np.log(np.abs(Z)))
 plt.xlim(param_bounds[0])
 plt.ylim(param_bounds[1])
 plt.colorbar()
-plt.xlabel('x')
-plt.ylabel('y')
+plt.xlabel(param_labels[0])
+plt.ylabel(param_labels[1])
 plt.title('log probability function: rosenbrock')
 
 # plot points sampled during mcmc
