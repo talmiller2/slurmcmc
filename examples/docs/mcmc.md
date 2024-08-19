@@ -12,7 +12,7 @@ in higher dimension an optimization should be done first, and the initial points
 
 We pick $N_c=10$ chains times $L_c=10^4$ iterations per chain. 
 Progress of the chains with iterations (after some burn-in):
-![example_mcmc_chains_progress](pics/example_mcmc_chains_progress.png)
+<img src="pics/example_mcmc_chains_progress.png" alt="example_mcmc_chains_progress" width="700" height="auto">
 
 The MCMC results require testing convergence diagnostics, as discussed in the [emcee docs](https://emcee.readthedocs.io/en/stable/tutorials/autocorr/):
 
@@ -33,12 +33,11 @@ diagnostic.
 
 All the mentioned metrics are shown per parameter in the legend of the figure above, and their dependence on the chain 
 length $L_c$:
-
-![example_mcmc_convergence_diagnostics](pics/example_mcmc_convergence_diagnostics.png)
+<img src="pics/example_mcmc_convergence_diagnostics.png" alt="example_mcmc_convergence_diagnostics" width="700" height="auto">
 
 2d visualization of the log-probability function (log absolute of the values), 
 the points visited by the algorithm (black) and the points accepted to the MCMC samples set (red):
-![example_mcmc_2d_visualization](pics/example_mcmc_2d_visualization.png)
+<img src="pics/example_mcmc_2d_visualization.png" alt="example_mcmc_2d_visualization" width="700" height="auto">
 
 The final product of the Bayesian analysis, a [``corner``](https://github.com/dfm/corner.py) plot of the parameters distribution:
-![example_mcmc_parameters_distribution](pics/example_mcmc_parameters_distribution.png)
+<img src="pics/example_mcmc_parameters_distribution.png" alt="example_mcmc_parameters_distribution" width="700" height="auto">
