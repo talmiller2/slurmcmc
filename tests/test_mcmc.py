@@ -197,3 +197,18 @@ def test_slurm_mcmc_with_extra_arg_local(work_dir, verbosity, seed, log_prob_fun
                          verbosity=verbosity, slurm_vebosity=verbosity,
                          work_dir=work_dir, cluster='local')
     assert os.path.isfile(os.path.join(work_dir, 'extra_arg.txt')), 'extra_arg.txt does not appear.'
+
+
+def test_slurm_mcmc_init_log_prob_fun_values_with_extra_arg(verbosity, seed, log_prob_fun_with_extra_arg):
+    num_params = 2
+    num_walkers = 10
+    num_iters = 3
+    minima = np.array([1, 1])
+    init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
+    extra_arg = 'sunny'
+    init_log_prob_fun_values = [log_prob_fun_with_extra_arg(point, extra_arg) for point in init_points]
+    sampler = slurm_mcmc(log_prob_fun=log_prob_fun_with_extra_arg, init_points=init_points, num_iters=num_iters,
+                         extra_arg=extra_arg,
+                         init_log_prob_fun_values=init_log_prob_fun_values,
+                         verbosity=verbosity, slurm_vebosity=verbosity,
+                         cluster='local-map')

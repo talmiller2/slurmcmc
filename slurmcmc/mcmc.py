@@ -30,7 +30,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
             ini_iter = status['ini_iter']
     else:
         # using extra_arg=None because emcee deals with extra_arg internally by wrapping the function
-        slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, extra_arg=None, **slurm_dict)
+        slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, extra_arg=extra_arg, **slurm_dict)
 
         # save the extra_arg in the work folder to document the full input used
         if cluster != 'local-map':
@@ -45,14 +45,25 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
                                         pool=slurm_pool, **emcee_dict)
 
         if init_log_prob_fun_values is None:
-            sampler.initial_state = init_points
+            # calculate the log probabilities of the init_points
+            if verbosity >= 1:
+                logging.info('### explicitly calculating the log probabilities of the init_points.')
+            init_log_prob_fun_values = slurm_pool.map(log_prob_fun, init_points)
         else:
-            # manually set the initial state and log probabilities
-            sampler.initial_state = emcee.State(init_points, log_prob=np.array(init_log_prob_fun_values))
+            if verbosity >= 1:
+                logging.info('### setting the input init_log_prob_fun_values for the init_points.')
 
+        # manually set the initial state
+        sampler.initial_state = emcee.State(init_points, log_prob=np.array(init_log_prob_fun_values))
+
+        # initializations
         ini_iter = 0
         sampler.mcmc_points_set = set()
         sampler.points_weights_dict = {}
+
+        # from here on, emcee deals itself with extra arguments by internally wrapping the log_prob_fun,
+        # so we remove it from slurm_pool to avoid erroneously double wrapping it
+        slurm_pool.extra_arg = None
 
     for curr_iter in range(ini_iter, ini_iter + num_iters):
         if verbosity >= 1:
@@ -60,7 +71,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
         state = sampler.run_mcmc(initial_state=sampler.initial_state, nsteps=1, progress=progress)
         sampler.initial_state = state
 
-        # track the points in the mcmc set and their weight
+        # track the points in the mcmc set and their weights
         for point in state.coords:
             point_tuple = point_to_tuple(point)
             if point_tuple not in sampler.mcmc_points_set:
