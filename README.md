@@ -41,4 +41,4 @@ This mode is used in the examples below for quick evaluations.
 ## Examples
 
 * [Optimization](examples/docs/optimization.md)
-* [Bayesian analysis (MCMC)](examples/docs/mcmc.md)
+* [Bayesian model calibration (MCMC)](examples/docs/mcmc.md)
