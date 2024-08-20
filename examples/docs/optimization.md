@@ -1,6 +1,13 @@
 
 ## Optimization
 
+For Bayesian model calibration (BMC), it is first worthwhile to check that the model is able to represent
+the data well. For this, we need to do optimization. 
+Also, for the following step of MCMC it is recommended to start close to the minima anyway, 
+which is also achieved in this step.
+
+--- 
+
 This example's plots are generated using [example_optimization.py](../example_optimization.py).
 
 We choose the loss function as the 2d-rosenbrock function, with a circle constraint. 

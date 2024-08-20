@@ -8,6 +8,7 @@ Implemented by wrapping and stitching together [``submitit``](https://github.com
     <img src="examples/docs/pics/logo.jpeg" alt="slurmcmc logo" width="700" height="auto">
 </div>
 
+---
 
 ## Install
 
@@ -32,6 +33,8 @@ To run a specific test, for example
 pytest -vv tests/test_map_local.py::test_slurmpool_localmap
 ```
 
+---
+
 ## Parallelization
 
 The algorithms used are based on parallel evaluations of functions, which we want to perform on Slurm-managed cluster.
@@ -42,8 +45,9 @@ The run options determined by the  `cluster` argument whose options are:
 parallelization is less important, for demonstrations and for debugging. 
 This mode is the one used in the examples below for quick evaluations.
 
+---
 
 ## Examples
 
-* [Optimization](examples/docs/optimization.md)
-* [Bayesian model calibration (MCMC)](examples/docs/mcmc.md)
+1. [Optimization](examples/docs/optimization.md)
+2. [Bayesian model calibration (MCMC)](examples/docs/mcmc.md)
