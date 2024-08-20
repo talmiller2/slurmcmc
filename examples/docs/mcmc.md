@@ -1,5 +1,5 @@
 
-## Bayesian analysis (MCMC)
+## Bayesian model calibration (MCMC)
 
 This example's plots are generated using [example_mcmc.py](../example_mcmc.py).
 
