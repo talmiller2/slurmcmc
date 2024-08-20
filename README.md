@@ -1,7 +1,8 @@
 # slurmcmc
 
-Perform model calibration with uncertainty quantification (also known as Bayesian model calibration) for models that require computationally expensive black-box queries, using parallel computing on a Slurm-managed cluster.
-Implemented by stitching together [``submitit``](https://github.com/facebookincubator/submitit) + [``nevergrad``](https://github.com/facebookresearch/nevergrad) + [``botorch``](https://github.com/pytorch/botorch) + [``emcee``](https://github.com/dfm/emcee).
+Perform model calibration with uncertainty quantification (also known as Bayesian model calibration) for models that 
+require computationally expensive black-box queries, using parallel computing on a Slurm-managed cluster.
+Implemented by wrapping and stitching together [``submitit``](https://github.com/facebookincubator/submitit) + [``nevergrad``](https://github.com/facebookresearch/nevergrad) + [``botorch``](https://github.com/pytorch/botorch) + [``emcee``](https://github.com/dfm/emcee).
 
 <div align="center">
     <img src="examples/docs/pics/logo.jpeg" alt="slurmcmc logo" width="700" height="auto">
@@ -39,7 +40,7 @@ The run options determined by the  `cluster` argument whose options are:
 * `'local'`: parallel evaluations using local processes, also via [``submitit``](https://github.com/facebookincubator/submitit) (on the same directories structure as in `'slurm'`, useful for debugging).
 * `'local-map'`: evaluate function in-line sequentially on multiple points. Useful for analytic functions where 
 parallelization is less important, for demonstrations and for debugging. 
-This mode is used in the examples below for quick evaluations.
+This mode is the one used in the examples below for quick evaluations.
 
 
 ## Examples
