@@ -110,7 +110,7 @@ plt.tight_layout()
 if save_plots:
     plt.savefig('example_mcmc_chains_progress')
 
-# loss_fun 2d plot
+# plot log-probability function 2d plot for visualization
 plt.figure(figsize=(8, 7))
 x = np.linspace(param_bounds[0][0], param_bounds[0][1], 100)
 y = np.linspace(param_bounds[1][0], param_bounds[1][1], 100)
@@ -146,7 +146,7 @@ plt.tight_layout()
 if save_plots:
     plt.savefig('example_mcmc_2d_visualization')
 
-# emcee corner plot
+# corner plot of mcmc samples
 fig = plt.figure(figsize=(7, 7))
 corner.corner(samples_flat, labels=param_labels, color='k', truths=minima, truth_color='r', fig=fig, labelpad=-0.1)
 plt.suptitle('mcmc parameters distribution')

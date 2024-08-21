@@ -47,7 +47,8 @@ This mode is the one used in the examples below for quick evaluations.
 
 ---
 
-## Examples
+## Pedagogical Examples
 
 1. [Optimization](examples/docs/optimization.md)
-2. [Bayesian model calibration (MCMC)](examples/docs/mcmc.md)
+2. [MCMC](examples/docs/mcmc.md)
+3. [MCMC with surrogate](examples/docs/mcmc_surrogate.md)

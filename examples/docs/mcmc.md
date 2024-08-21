@@ -1,5 +1,12 @@
 
-## Bayesian model calibration (MCMC)
+## MCMC
+
+The heart of Bayesian model calibration (BMC) or Bayesian parameter estimation is to find the probability distribution 
+of the model parameters. 
+For high-dimension problems Markov chain Monte Carlo (MCMC) is a class of algorithms that aim to find this 
+distribution efficiently.
+
+---
 
 This example's plots are generated using [example_mcmc.py](../example_mcmc.py).
 
@@ -33,11 +40,14 @@ diagnostic.
 
 All the mentioned metrics are shown per parameter in the legend of the figure above, and their dependence on the chain 
 length $L_c$:
+
 <img src="pics/example_mcmc_convergence_diagnostics.png" alt="example_mcmc_convergence_diagnostics" width="700" height="auto">
 
 2d visualization of the log-probability function (log absolute of the values), 
 the points visited by the algorithm (black) and the points accepted to the MCMC samples set (red):
+
 <img src="pics/example_mcmc_2d_visualization.png" alt="example_mcmc_2d_visualization" width="700" height="auto">
 
 The final product of the Bayesian analysis, a [``corner``](https://github.com/dfm/corner.py) plot of the parameters distribution:
+
 <img src="pics/example_mcmc_parameters_distribution.png" alt="example_mcmc_parameters_distribution" width="700" height="auto">
