@@ -4,7 +4,7 @@ import os
 import numpy as np
 import submitit
 
-from slurmcmc.general_utils import combine_args, set_logging, save_extra_arg_to_file, point_to_tuple, get_dirs
+from slurmcmc.general_utils import combine_args, set_logging, save_extra_arg_to_file, point_to_tuple, list_directories
 
 
 class SlurmPool():
@@ -35,7 +35,7 @@ class SlurmPool():
 
         set_logging(self.work_dir, self.log_file)
 
-        if cluster in ['local', 'slurm'] and len(get_dirs(work_dir)) > 0:
+        if cluster in ['local', 'slurm'] and len(list_directories(work_dir)) > 0:
             error_msg = 'work_dir appears to already contain runs, move or delete it first.'
             error_msg += '\n' + 'work_dir:' + work_dir
             raise ValueError(error_msg)

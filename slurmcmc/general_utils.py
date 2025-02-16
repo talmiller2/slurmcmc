@@ -3,7 +3,9 @@ import logging
 import os
 import pickle
 import shutil
+
 import numpy as np
+
 
 def set_logging(work_dir=None, log_file=None):
     if log_file is not None:
@@ -62,11 +64,6 @@ def combine_args(arg, extra_arg=None):
     return args
 
 
-def delete_directory(dir_path):
-    if os.path.isdir(dir_path):
-        shutil.rmtree(dir_path, ignore_errors=True)
-
-
 def save_extra_arg_to_file(work_dir, extra_arg):
     # save the extra_arg in the run folder to document the full input used for this point
     if extra_arg is not None:
@@ -74,10 +71,16 @@ def save_extra_arg_to_file(work_dir, extra_arg):
         with open(extra_arg_file, 'w') as json_file:
             json.dump(extra_arg, json_file)
 
+
+def delete_directory(dir_path):
+    if os.path.isdir(dir_path):
+        shutil.rmtree(dir_path, ignore_errors=True)
+
+
+def list_directories(path):
+    return [d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))]
+
+
 def point_to_tuple(point):
     # convert to tuple even in case of 1d point
     return tuple(point) if isinstance(point, (list, set, np.ndarray)) else (point,)
-
-def get_dirs(path):
-    # return directories inside path
-    return [d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))]
