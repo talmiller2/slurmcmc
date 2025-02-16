@@ -77,3 +77,7 @@ def save_extra_arg_to_file(work_dir, extra_arg):
 def point_to_tuple(point):
     # convert to tuple even in case of 1d point
     return tuple(point) if isinstance(point, (list, set, np.ndarray)) else (point,)
+
+def get_dirs(path):
+    # return directories inside path
+    return [d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))]

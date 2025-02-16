@@ -163,7 +163,7 @@ def test_slurmpool_local_2params_check_query_dir(work_dir, verbosity, fun_that_w
 
 
 def test_slurmpool_fail_on_existing_work_dir(work_dir, verbosity):
-    os.makedirs(os.path.join(work_dir, '0'), exist_ok=True)
+    os.makedirs(os.path.join(work_dir, '1'), exist_ok=True)
     with pytest.raises(ValueError):
         SlurmPool(work_dir, cluster='local', verbosity=verbosity)
 
