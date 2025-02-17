@@ -16,8 +16,8 @@ class SlurmPool():
     cluster: 'slurm' or 'local' (run locally with submitit) or 'local-map' (run locally with map)
     """
 
-    def __init__(self, work_dir='tmp', job_name='tmp', cluster='slurm', timeout_min=int(1e8),
-                 budget=int(1e6), verbosity=1, log_file=None, extra_arg=None, **job_params):
+    def __init__(self, work_dir='slurmpool', job_name='slurmpool', cluster='slurm', timeout_min=int(1e8),
+                 budget=int(1e6), verbosity=1, log_file=None, extra_arg=None, **submitit_kwargs):
         self.num_calls = 0
         self.points_history = []
         self.values_history = []
@@ -26,9 +26,9 @@ class SlurmPool():
         self.point_loc_dict = {}
         self.work_dir = work_dir
         self.job_name = job_name
-        self.job_params = job_params
         self.cluster = cluster
         self.timeout_min = timeout_min
+        self.submitit_kwargs = submitit_kwargs
         self.verbosity = verbosity
         self.budget = budget
         self.log_file = log_file
@@ -168,7 +168,7 @@ class SlurmPool():
             job_name = self.job_name + '_' + str(self.num_calls) + '_' + str(ind_point)
             self.executor = submitit.AutoExecutor(folder=point_dir, cluster=self.cluster)
             self.executor.update_parameters(slurm_job_name=job_name, timeout_min=self.timeout_min,
-                                            **self.job_params)
+                                            **self.submitit_kwargs)
             os.chdir(point_dir)  # each point evaluation (query) is born in its own dir
             job = self.executor.submit(fun, *self._combine_args(point))
             jobs += [job]

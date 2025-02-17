@@ -11,7 +11,7 @@ from slurmcmc.slurm_utils import SlurmPool
 def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values=None,
                progress=False, verbosity=1, slurm_vebosity=0, log_file=None, extra_arg=None,
                save_restart=False, load_restart=False, restart_file='mcmc_restart.pkl',
-               work_dir='tmp', job_name='mcmc', cluster='slurm', slurm_dict={}, emcee_dict={}):
+               work_dir='mcmc', job_name='mcmc', cluster='slurm', submitit_kwargs={}, emcee_kwargs={}):
     """
     combine submitit + emcee to allow ensemble mcmc on slurm.
     the number of parallelizable evaluations in the default emcee "move" is len(init_points)/2,
@@ -30,19 +30,20 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
             ini_iter = status['ini_iter']
     else:
         # using extra_arg=None because emcee deals with extra_arg internally by wrapping the function
-        slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, extra_arg=extra_arg, **slurm_dict)
+        slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, extra_arg=extra_arg,
+                               **submitit_kwargs)
 
         # save the extra_arg in the work folder to document the full input used
         if cluster != 'local-map':
             save_extra_arg_to_file(work_dir, extra_arg)
 
         # supply args=[extra_arg] to emcee for it to wrap it internally
-        if (extra_arg is not None) and ('args' not in emcee_dict):
-            emcee_dict['args'] = [extra_arg]
+        if (extra_arg is not None) and ('args' not in emcee_kwargs):
+            emcee_kwargs['args'] = [extra_arg]
 
         nwalkers, ndim = np.array(init_points).shape
         sampler = emcee.EnsembleSampler(nwalkers=nwalkers, ndim=ndim, log_prob_fn=log_prob_fun,
-                                        pool=slurm_pool, **emcee_dict)
+                                        pool=slurm_pool, **emcee_kwargs)
 
         if init_log_prob_fun_values is None:
             # calculate the log probabilities of the init_points
