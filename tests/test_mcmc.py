@@ -8,6 +8,9 @@ from slurmcmc.general_utils import delete_directory, load_restart_file
 from slurmcmc.mcmc import slurm_mcmc
 
 
+submitit_kwargs = {'cluster': 'slurm', 'slurm_partition': 'core', 'timeout_min': 10}
+# submitit_kwargs = {'cluster': 'slurm', 'slurm_constraint': 'serial'}
+
 @pytest.fixture()
 def work_dir(request):
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -219,6 +222,27 @@ def test_local_remote_slurm_mcmc(work_dir, verbosity, seed):
                      verbosity=verbosity, slurm_vebosity=verbosity,
                      work_dir=work_dir, cluster='local-map',
                      remote=True, remote_cluster='local')
+
+    status = job.result()
+    samples = status['sampler'].get_chain(flat=True)
+    samples = np.vstack([init_points, samples])  # init_points are not inherently included in the mcmc sampler samples
+    num_calculated_points = num_walkers * (num_iters + 1)
+    np.testing.assert_equal(samples.shape, (num_calculated_points, num_params))
+    np.testing.assert_equal(status['slurm_pool'].points_history.shape, (num_calculated_points, num_params))
+    assert status['slurm_pool'].num_calls == 7
+
+
+def test_slurm_remote_slurm_mcmc(work_dir, verbosity, seed):
+    num_params = 2
+    num_walkers = 10
+    num_iters = 3
+    minima = np.array([1, 1])
+    init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
+
+    job = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
+                     verbosity=verbosity, slurm_vebosity=verbosity,
+                     work_dir=work_dir, cluster='local-map',
+                     remote=True, remote_submitit_kwargs=submitit_kwargs)
 
     status = job.result()
     samples = status['sampler'].get_chain(flat=True)
