@@ -8,9 +8,8 @@ from slurmcmc.general_utils import delete_directory, load_restart_file
 from slurmcmc.mcmc import slurm_mcmc
 from slurmcmc.slurm_utils import is_slurm_cluster
 
-
-submitit_kwargs = {'cluster': 'slurm', 'slurm_partition': 'core', 'timeout_min': 10}
-# submitit_kwargs = {'cluster': 'slurm', 'slurm_constraint': 'serial'}
+submitit_kwargs = {'slurm_partition': 'core', 'timeout_min': 10}
+# submitit_kwargs = {'slurm_constraint': 'serial'}
 
 @pytest.fixture()
 def work_dir(request):
@@ -244,7 +243,7 @@ def test_slurm_remote_slurm_mcmc(work_dir, verbosity, seed):
     job = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
                      verbosity=verbosity, slurm_vebosity=verbosity,
                      work_dir=work_dir, cluster='local-map',
-                     remote=True, remote_submitit_kwargs=submitit_kwargs)
+                     remote=True, remote_cluster='slurm', remote_submitit_kwargs=submitit_kwargs)
 
     status = job.result()
     samples = status['sampler'].get_chain(flat=True)

@@ -9,8 +9,8 @@ from slurmcmc.general_utils import delete_directory
 from slurmcmc.optimization import slurm_minimize
 from slurmcmc.slurm_utils import is_slurm_cluster
 
-submitit_kwargs = {'cluster': 'slurm', 'slurm_partition': 'core', 'timeout_min': 10}
-# submitit_kwargs = {'cluster': 'slurm', 'slurm_constraint': 'serial'}
+submitit_kwargs = {'slurm_partition': 'core', 'timeout_min': 10}
+# submitit_kwargs = {'slurm_constraint': 'serial'}
 
 @pytest.fixture
 def work_dir(request):
@@ -334,7 +334,7 @@ def test_slurm_remote_slurm_minimize_1param(work_dir, verbosity, seed, loss_fun_
     job = slurm_minimize(loss_fun=loss_fun_1d,
                          param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
                          work_dir=work_dir, cluster='local-map', verbosity=verbosity,
-                         remote=True, remote_submitit_kwargs=submitit_kwargs)
+                         remote=True, remote_cluster='slurm', remote_submitit_kwargs=submitit_kwargs)
 
     result = job.result()
     assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.02
