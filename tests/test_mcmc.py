@@ -1,5 +1,4 @@
 import os
-import time
 
 import numpy as np
 import pytest
@@ -30,26 +29,18 @@ def verbosity():
     return 1
 
 
-@pytest.fixture()
-def log_prob_fun():
-    def _log_prob_fun(x):
+def log_prob_fun(x):
+    return -rosen(x)
+
+
+def log_prob_fun_with_extra_arg(x, extra_arg):
+    if extra_arg == 'sunny':
         return -rosen(x)
-
-    return _log_prob_fun
-
-
-@pytest.fixture()
-def log_prob_fun_with_extra_arg():
-    def _log_prob_fun_with_extra_arg(x, extra_arg):
-        if extra_arg == 'sunny':
-            return -rosen(x)
-        else:
-            return None
-
-    return _log_prob_fun_with_extra_arg
+    else:
+        return None
 
 
-def test_slurm_mcmc(verbosity, seed, log_prob_fun):
+def test_slurm_mcmc(verbosity, seed):
     num_params = 2
     num_walkers = 10
     num_iters = 3
@@ -66,7 +57,7 @@ def test_slurm_mcmc(verbosity, seed, log_prob_fun):
     assert status['slurm_pool'].num_calls == 7
 
 
-def test_slurm_mcmc_local(work_dir, verbosity, seed, log_prob_fun):
+def test_slurm_mcmc_local(work_dir, verbosity, seed):
     num_params = 2
     num_walkers = 10
     num_iters = 3
@@ -84,7 +75,7 @@ def test_slurm_mcmc_local(work_dir, verbosity, seed, log_prob_fun):
     assert sum_weights == num_walkers * num_iters
 
 
-def test_slurm_mcmc_with_budget(verbosity, seed, log_prob_fun):
+def test_slurm_mcmc_with_budget(verbosity, seed):
     num_params = 2
     num_walkers = 10
     num_iters = 3
@@ -98,7 +89,7 @@ def test_slurm_mcmc_with_budget(verbosity, seed, log_prob_fun):
     assert status['slurm_pool'].num_calls == 8
 
 
-def test_slurm_mcmc_with_log_file(work_dir, verbosity, seed, log_prob_fun):
+def test_slurm_mcmc_with_log_file(work_dir, verbosity, seed):
     num_params = 2
     num_walkers = 10
     num_iters = 3
@@ -113,7 +104,7 @@ def test_slurm_mcmc_with_log_file(work_dir, verbosity, seed, log_prob_fun):
 
 
 def log_prob_fun_global(x):
-    # defined globally for test_slurm_mcmc_with_restart,
+    # defined globally for test_slurm_mcmc_with_restart
     # because the local version that is defined as a fixture fails to be pickled
     return -rosen(x)
 
@@ -131,7 +122,7 @@ def test_slurm_mcmc_with_restart(work_dir, verbosity, seed):
     minima = np.array([1, 1])
     init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
 
-    status_1 = slurm_mcmc(log_prob_fun=log_prob_fun_global, init_points=init_points, num_iters=num_iters,
+    status_1 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
                           verbosity=verbosity, slurm_vebosity=verbosity,
                           cluster='local-map',
                           work_dir=work_dir, save_restart=True, load_restart=False)
@@ -143,7 +134,7 @@ def test_slurm_mcmc_with_restart(work_dir, verbosity, seed):
     restart_1 = load_restart_file(work_dir, restart_file='mcmc_restart.pkl')
     assert restart_1['ini_iter'] == num_iters
 
-    status_2 = slurm_mcmc(log_prob_fun=log_prob_fun_global, init_points=init_points, num_iters=num_iters,
+    status_2 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
                           verbosity=verbosity, slurm_vebosity=verbosity,
                           cluster='local-map',
                           work_dir=work_dir, save_restart=True, load_restart=True)
@@ -156,7 +147,7 @@ def test_slurm_mcmc_with_restart(work_dir, verbosity, seed):
     assert restart_2['ini_iter'] == 2 * num_iters
 
 
-def test_slurm_mcmc_init_log_prob_fun_values(verbosity, seed, log_prob_fun):
+def test_slurm_mcmc_init_log_prob_fun_values(verbosity, seed):
     num_params = 2
     num_walkers = 10
     num_iters = 3
@@ -174,7 +165,9 @@ def test_slurm_mcmc_init_log_prob_fun_values(verbosity, seed, log_prob_fun):
     assert status['slurm_pool'].num_calls == 6
 
 
-def test_slurm_mcmc_with_extra_arg_localmap(verbosity, seed, log_prob_fun_with_extra_arg):
+def test_slurm_mcmc_with_extra_arg_localmap(verbosity, seed):
+    # print('locals=', locals())
+
     num_params = 2
     num_walkers = 5
     num_iters = 2
@@ -186,7 +179,7 @@ def test_slurm_mcmc_with_extra_arg_localmap(verbosity, seed, log_prob_fun_with_e
                         cluster='local-map')
 
 
-def test_slurm_mcmc_with_extra_arg_local(work_dir, verbosity, seed, log_prob_fun_with_extra_arg):
+def test_slurm_mcmc_with_extra_arg_local(work_dir, verbosity, seed):
     num_params = 2
     num_walkers = 5
     num_iters = 2
@@ -199,13 +192,14 @@ def test_slurm_mcmc_with_extra_arg_local(work_dir, verbosity, seed, log_prob_fun
     assert os.path.isfile(os.path.join(work_dir, 'extra_arg.txt')), 'extra_arg.txt does not appear.'
 
 
-def test_slurm_mcmc_init_log_prob_fun_values_with_extra_arg(verbosity, seed, log_prob_fun_with_extra_arg):
+def test_slurm_mcmc_init_log_prob_fun_values_with_extra_arg(verbosity, seed):
     num_params = 2
     num_walkers = 10
     num_iters = 3
     minima = np.array([1, 1])
     init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
     extra_arg = 'sunny'
+
     init_log_prob_fun_values = [log_prob_fun_with_extra_arg(point, extra_arg) for point in init_points]
     status = slurm_mcmc(log_prob_fun=log_prob_fun_with_extra_arg, init_points=init_points, num_iters=num_iters,
                         extra_arg=extra_arg,
@@ -214,7 +208,7 @@ def test_slurm_mcmc_init_log_prob_fun_values_with_extra_arg(verbosity, seed, log
                         cluster='local-map')
 
 
-def test_local_remote_slurm_mcmc(work_dir, verbosity, seed, log_prob_fun):
+def test_local_remote_slurm_mcmc(work_dir, verbosity, seed):
     num_params = 2
     num_walkers = 10
     num_iters = 3

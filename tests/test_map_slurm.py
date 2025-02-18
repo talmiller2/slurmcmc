@@ -5,7 +5,7 @@ import pytest
 from slurmcmc.general_utils import delete_directory
 from slurmcmc.slurm_utils import SlurmPool
 
-submitit_kwargs = {'cluster': 'slurm', 'slurm_partition': 'socket'}
+submitit_kwargs = {'cluster': 'slurm', 'slurm_partition': 'core', 'timeout_min': 10}
 # submitit_kwargs = {'cluster': 'slurm', 'slurm_constraint': 'serial'}
 
 @pytest.fixture()

@@ -68,8 +68,10 @@ else:
     log_prob_fun = log_prob_rosen
 
 print('running mcmc with expensive function.')
-sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                     cluster='local-map', verbosity=0)
+status = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
+                    cluster='local-map', verbosity=0)
+sampler = status['sampler']
+slurm_pool = status['slurm_pool']
 
 print("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler.acceptance_fraction)))
 
@@ -96,7 +98,7 @@ surrogate = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10, alp
 # combine mcmc points and some "random" points for regularization in far away regions
 num_iters_for_training_mcmc = int(0.5 * num_iters_for_training)
 X_train, y_train = [], []
-for point, value in zip(sampler.pool.points_history, sampler.pool.values_history):
+for point, value in zip(slurm_pool.points_history, slurm_pool.values_history):
     if tuple(point) in sampler.mcmc_points_set:
         X_train += [point]
         y_train += [value]
@@ -126,7 +128,7 @@ log_prob_fun_surrogate = lambda x: surrogate.predict(x.reshape(1, -1))[0]  # for
 # test the accuracy of the surrogate model on a separate test set
 num_points_test = 100
 X_test, y_test = [], []
-for point, value in zip(sampler.pool.points_history, sampler.pool.values_history):
+for point, value in zip(slurm_pool.points_history, slurm_pool.values_history):
     if tuple(point) in sampler.mcmc_points_set and point not in X_train:
         X_test += [point]
         y_test += [value]
@@ -153,9 +155,9 @@ else:
     log_prob_fun = log_prob_fun_surrogate
 
 print('running mcmc with surrogate.')
-sampler_2 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
+status_2 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
                        cluster='local-map', verbosity=0)
-
+sampler_2 = status_2['sampler']
 print("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler_2.acceptance_fraction)))
 
 tau = sampler_2.get_autocorr_time(quiet=True)

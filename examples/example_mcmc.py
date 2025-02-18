@@ -56,8 +56,10 @@ init_points = (np.array([[x0_constraint, y0_constraint] for _ in range(num_walke
 
 # log_prob_fun = log_prob
 log_prob_fun = log_prob_with_constraint
-sampler = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                     cluster='local-map', verbosity=0)
+status = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
+                    cluster='local-map', verbosity=0)
+sampler = status['sampler']
+slurm_pool = status['slurm_pool']
 
 print("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler.acceptance_fraction)))
 
@@ -128,7 +130,7 @@ plt.ylabel(param_labels[1])
 plt.title('log probability function: rosenbrock')
 
 # plot points sampled during mcmc
-plt.scatter(sampler.pool.points_history[:, 0], sampler.pool.points_history[:, 1], c='k', marker='o', s=10, alpha=0.1)
+plt.scatter(slurm_pool.points_history[:, 0], slurm_pool.points_history[:, 1], c='k', marker='o', s=10, alpha=0.1)
 # plot points accepted during mcmc
 plt.scatter(samples_flat[:, 0], samples_flat[:, 1], c='r', marker='o', s=10, alpha=0.1)
 plt.tight_layout()

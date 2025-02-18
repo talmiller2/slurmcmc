@@ -32,7 +32,7 @@ def verbosity():
 
 
 @pytest.fixture()
-def loss_fun_1d(request):
+def loss_fun_1d():
     def _loss_fun_1d(x):
         return (x - 1) ** 2
 

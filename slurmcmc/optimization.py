@@ -12,14 +12,14 @@ from slurmcmc.slurm_utils import SlurmPool
 
 
 def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
-                   optimizer_package='nevergrad', optimizer_class=None, botorch_kwargs={},
+                   optimizer_package='nevergrad', optimizer_class=None, botorch_kwargs=None,
                    init_points=None, constraint_fun=None, num_asks_max=int(1e3),
                    verbosity=1, slurm_vebosity=0, log_file=None, extra_arg=None,
                    save_restart=False, load_restart=False, restart_file='opt_restart.pkl',
-                   work_dir='minimize', job_name='minimize', cluster='slurm', submitit_kwargs={},
+                   work_dir='minimize', job_name='minimize', cluster='slurm', submitit_kwargs=None,
                    # remote run params:
-                   remote=False, remote_job_name='remote_minimize', remote_cluster='slurm',
-                   remote_timeout_min=int(1e8), remote_submitit_kwargs={},
+                   remote=False, remote_job_name='main_minimize', remote_cluster='slurm',
+                   remote_timeout_min=int(1e8), remote_submitit_kwargs=None,
                    ):
     """
     combine submitit + nevergrad + botorch to allow parallel optimization on slurm.
@@ -30,16 +30,24 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
 
     if remote == True:
         print('Running slurm_minimize remotely.')
+        if remote_submitit_kwargs is None:
+            remote_submitit_kwargs = {}
         kwargs = locals()
         kwargs['remote'] = False
         executor = submitit.AutoExecutor(folder=work_dir, cluster=remote_cluster)
-        executor.update_parameters(slurm_job_name=remote_job_name, timeout_min=remote_timeout_min)
+        executor.update_parameters(slurm_job_name=remote_job_name, timeout_min=remote_timeout_min,
+                                   **remote_submitit_kwargs)
         job = executor.submit(functools.partial(slurm_minimize, **kwargs))
         return job
 
     else:
 
         if load_restart:
+            if submitit_kwargs is None:
+                submitit_kwargs = {}
+            if botorch_kwargs is None:
+                botorch_kwargs = {}
+
             if verbosity >= 1:
                 logging.info('loading restart file: ' + work_dir + '/' + restart_file)
 
