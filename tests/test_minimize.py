@@ -7,7 +7,7 @@ from scipy.optimize import rosen
 
 from slurmcmc.general_utils import delete_directory
 from slurmcmc.optimization import slurm_minimize
-
+from slurmcmc.slurm_utils import is_slurm_cluster
 
 submitit_kwargs = {'cluster': 'slurm', 'slurm_partition': 'core', 'timeout_min': 10}
 # submitit_kwargs = {'cluster': 'slurm', 'slurm_constraint': 'serial'}
@@ -323,6 +323,7 @@ def test_local_remote_slurm_minimize_1param(work_dir, verbosity, seed, loss_fun_
     assert result['loss_min'] <= 1e-3
 
 
+@pytest.mark.skipif(not is_slurm_cluster(), reason="This test only runs on a Slurm cluster")
 def test_slurm_remote_slurm_minimize_1param(work_dir, verbosity, seed, loss_fun_1d):
     num_params = 1
     param_bounds = [[-5, 5] for _ in range(num_params)]

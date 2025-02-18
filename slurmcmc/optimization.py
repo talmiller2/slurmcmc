@@ -18,8 +18,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                    save_restart=False, load_restart=False, restart_file='opt_restart.pkl',
                    work_dir='minimize', job_name='minimize', cluster='slurm', submitit_kwargs=None,
                    # remote run params:
-                   remote=False, remote_job_name='main_minimize', remote_cluster='slurm',
-                   remote_timeout_min=int(1e8), remote_submitit_kwargs=None,
+                   remote=False, remote_cluster='slurm', remote_submitit_kwargs=None,
                    ):
     """
     combine submitit + nevergrad + botorch to allow parallel optimization on slurm.
@@ -32,11 +31,14 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         print('Running slurm_minimize remotely.')
         if remote_submitit_kwargs is None:
             remote_submitit_kwargs = {}
+        if 'slurm_job_name' not in remote_submitit_kwargs:
+            remote_submitit_kwargs['slurm_job_name'] = 'main_' + job_name
+        if 'timeout_min' not in remote_submitit_kwargs:
+            remote_submitit_kwargs['timeout_min'] = int(1e8)
         kwargs = locals()
         kwargs['remote'] = False
         executor = submitit.AutoExecutor(folder=work_dir, cluster=remote_cluster)
-        executor.update_parameters(slurm_job_name=remote_job_name, timeout_min=remote_timeout_min,
-                                   **remote_submitit_kwargs)
+        executor.update_parameters(**remote_submitit_kwargs)
         job = executor.submit(functools.partial(slurm_minimize, **kwargs))
         return job
 
@@ -96,7 +98,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                 raise ValueError('invalid optimizer_package:', optimizer_package)
 
             slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, log_file=log_file,
-                                   extra_arg=extra_arg, **submitit_kwargs)
+                                   extra_arg=extra_arg, submitit_kwargs=submitit_kwargs)
             ini_iter = 0
             num_loss_fun_calls_total = 0
             num_constraint_fun_calls_total = 0

@@ -15,37 +15,27 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
                save_restart=False, load_restart=False, restart_file='mcmc_restart.pkl',
                work_dir='mcmc', job_name='mcmc', cluster='slurm', submitit_kwargs=None, emcee_kwargs=None,
                # remote run params:
-               remote=False, remote_job_name='main_mcmc', remote_cluster='slurm',
-               remote_timeout_min=int(1e8), remote_submitit_kwargs=None,
+               remote=False, remote_cluster='slurm', remote_submitit_kwargs=None,
                ):
     """
     combine submitit + emcee to allow ensemble mcmc on slurm.
     the number of parallelizable evaluations in the default emcee "move" is len(init_points)/2,
     except the first one on the init_points which is len(init_points).
     """
-    # print('@@@@@@@@@@')
-    # print('extra_arg=', extra_arg)
-    # print('log_prob_fun=', log_prob_fun)
-    # print('init_points[0]=', init_points[0])
-    # print('log_prob_fun(init_points[0])=', log_prob_fun(init_points[0]))
-    # print('@@@@@@@@@@')
-    # kwargs = locals()
-    # print('kwargs=', kwargs)
-    # print('@@@@@@@@@@')
-
     set_logging(work_dir, log_file)
 
     if remote == True:
+        print('Running slurm_mcmc remotely.')
         if remote_submitit_kwargs is None:
             remote_submitit_kwargs = {}
-        print('Running slurm_mcmc remotely.')
+        if 'slurm_job_name' not in remote_submitit_kwargs:
+            remote_submitit_kwargs['slurm_job_name'] = 'main_' + job_name
+        if 'timeout_min' not in remote_submitit_kwargs:
+            remote_submitit_kwargs['timeout_min'] = int(1e8)
         kwargs = locals()
-        # print('emcee_kwargs=', kwargs['emcee_kwargs'])
-        # print('locals=', locals())
         kwargs['remote'] = False
-        # print('kwargs=', kwargs)
         executor = submitit.AutoExecutor(folder=work_dir, cluster=remote_cluster)
-        executor.update_parameters(slurm_job_name=remote_job_name, timeout_min=remote_timeout_min, **remote_submitit_kwargs)
+        executor.update_parameters(**remote_submitit_kwargs)
         job = executor.submit(functools.partial(slurm_mcmc, **kwargs))
         return job
 
@@ -67,7 +57,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
         else:
             # using extra_arg=None because emcee deals with extra_arg internally by wrapping the function
             slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, extra_arg=extra_arg,
-                                   **submitit_kwargs)
+                                   submitit_kwargs=submitit_kwargs)
 
             # save the extra_arg in the work folder to document the full input used
             if cluster != 'local-map':

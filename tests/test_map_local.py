@@ -105,7 +105,7 @@ def test_slurmpool_localmap_history_2params(verbosity):
 
 
 def test_slurmpool_localmap_with_budget(verbosity):
-    slurm_pool = SlurmPool(cluster='local-map', verbosity=verbosity, budget=2)
+    slurm_pool = SlurmPool(cluster='local-map', verbosity=verbosity, submitit_kwargs={'budget': 2})
     fun = lambda x: x ** 2
     points = [2, 3, 4, 5, 6]
     res_expected = [fun(point) for point in points]

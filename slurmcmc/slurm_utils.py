@@ -16,8 +16,8 @@ class SlurmPool():
     cluster: 'slurm' or 'local' (run locally with submitit) or 'local-map' (run locally with map)
     """
 
-    def __init__(self, work_dir='slurmpool', job_name='slurmpool', cluster='slurm', timeout_min=int(1e8),
-                 budget=int(1e6), verbosity=1, log_file=None, extra_arg=None, **submitit_kwargs):
+    def __init__(self, work_dir='slurmpool', job_name='slurmpool', cluster='slurm',
+                 verbosity=1, log_file=None, extra_arg=None, submitit_kwargs=None):
         self.num_calls = 0
         self.points_history = []
         self.values_history = []
@@ -27,11 +27,20 @@ class SlurmPool():
         self.work_dir = work_dir
         self.job_name = job_name
         self.cluster = cluster
-        self.timeout_min = timeout_min
-        self.submitit_kwargs = submitit_kwargs
         self.verbosity = verbosity
-        self.budget = budget
         self.log_file = log_file
+        if submitit_kwargs is None:
+            submitit_kwargs = {}
+        if 'slurm_job_name' not in submitit_kwargs:
+            submitit_kwargs['slurm_job_name'] = job_name
+        if 'timeout_min' not in submitit_kwargs:
+            submitit_kwargs['timeout_min'] = int(1e8)
+        if 'budget' not in submitit_kwargs:
+            self.budget = int(1e6)
+        else:
+            self.budget = submitit_kwargs['budget']
+            submitit_kwargs.pop('budget') # remove because submitit does not actually take this argument
+        self.submitit_kwargs = submitit_kwargs
 
         set_logging(self.work_dir, self.log_file)
 
@@ -166,9 +175,9 @@ class SlurmPool():
         jobs = []
         for ind_point, (point, point_dir) in enumerate(zip(points, point_dirs)):
             job_name = self.job_name + '_' + str(self.num_calls) + '_' + str(ind_point)
+            self.submitit_kwargs['slurm_job_name'] = job_name
             self.executor = submitit.AutoExecutor(folder=point_dir, cluster=self.cluster)
-            self.executor.update_parameters(slurm_job_name=job_name, timeout_min=self.timeout_min,
-                                            **self.submitit_kwargs)
+            self.executor.update_parameters(**self.submitit_kwargs)
             os.chdir(point_dir)  # each point evaluation (query) is born in its own dir
             job = self.executor.submit(fun, *self._combine_args(point))
             jobs += [job]
@@ -186,3 +195,10 @@ class SlurmPool():
 
         os.chdir(ini_dir)  # return to initial dir
         return outputs
+
+
+def is_slurm_cluster():
+    """
+    return True if running on a Slurm cluster
+    """
+    return 'SLURM_JOB_ID' in os.environ

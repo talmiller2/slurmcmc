@@ -6,6 +6,7 @@ from scipy.optimize import rosen
 
 from slurmcmc.general_utils import delete_directory, load_restart_file
 from slurmcmc.mcmc import slurm_mcmc
+from slurmcmc.slurm_utils import is_slurm_cluster
 
 
 submitit_kwargs = {'cluster': 'slurm', 'slurm_partition': 'core', 'timeout_min': 10}
@@ -232,6 +233,7 @@ def test_local_remote_slurm_mcmc(work_dir, verbosity, seed):
     assert status['slurm_pool'].num_calls == 7
 
 
+@pytest.mark.skipif(not is_slurm_cluster(), reason="This test only runs on a Slurm cluster")
 def test_slurm_remote_slurm_mcmc(work_dir, verbosity, seed):
     num_params = 2
     num_walkers = 10
