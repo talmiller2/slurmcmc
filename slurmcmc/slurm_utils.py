@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 
 import numpy as np
 import submitit
@@ -39,7 +40,7 @@ class SlurmPool():
             self.budget = int(1e6)
         else:
             self.budget = submitit_kwargs['budget']
-            submitit_kwargs.pop('budget') # remove because submitit does not actually take this argument
+            submitit_kwargs.pop('budget')  # remove because submitit does not actually take this argument
         self.submitit_kwargs = submitit_kwargs
 
         set_logging(self.work_dir, self.log_file)
@@ -199,6 +200,6 @@ class SlurmPool():
 
 def is_slurm_cluster():
     """
-    return True if running on a Slurm cluster
+    return True if running in a computer connected to Slurm cluster
     """
-    return 'SLURM_JOB_ID' in os.environ
+    return shutil.which('srun') != None
