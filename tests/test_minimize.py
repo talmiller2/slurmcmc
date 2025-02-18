@@ -301,3 +301,20 @@ def test_slurm_minimize_1param_botorch_with_restart(work_dir, verbosity, seed, l
     assert len(res_2['slurm_pool'].points_history) == 2 * num_iters * num_workers
     assert res_2['ini_iter'] == 2 * num_iters
     assert res_2['loss_min'] <= 1e-3
+
+
+def test_local_remote_slurm_minimize_1param(work_dir, verbosity, seed, loss_fun_1d):
+    num_params = 1
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    expected_minima_point = np.ones(num_params)
+    num_workers = 5
+    num_iters = 10
+
+    job = slurm_minimize(loss_fun=loss_fun_1d,
+                         param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                         work_dir=work_dir, cluster='local-map', verbosity=verbosity,
+                         remote=True, remote_cluster='local')
+
+    result = job.result()
+    assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.02
+    assert result['loss_min'] <= 1e-3

@@ -5,6 +5,8 @@ import pytest
 from slurmcmc.general_utils import delete_directory
 from slurmcmc.slurm_utils import SlurmPool
 
+submitit_kwargs = {'cluster': 'slurm', 'slurm_partition': 'socket'}
+# submitit_kwargs = {'cluster': 'slurm', 'slurm_constraint': 'serial'}
 
 @pytest.fixture()
 def work_dir(request):
@@ -18,10 +20,7 @@ def work_dir(request):
 
 
 def test_slurmpool_slurm(work_dir):
-    slurm_pool = SlurmPool(work_dir, job_name='test_slurmpool',
-                           cluster='slurm', slurm_partition='socket',
-                           # cluster='slurm', slurm_constraint='serial',
-                           )
+    slurm_pool = SlurmPool(work_dir, job_name='test_slurmpool', **submitit_kwargs)
     fun = lambda x: x ** 2
     points = [2, 3, 4]
     res_expected = [fun(point) for point in points]
