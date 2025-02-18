@@ -21,7 +21,7 @@ def work_dir(request):
 
 @pytest.mark.skipif(not is_slurm_cluster(), reason="This test only runs on a Slurm cluster")
 def test_slurmpool_slurm(work_dir):
-    slurm_pool = SlurmPool(work_dir, job_name='test_slurmpool', **submitit_kwargs)
+    slurm_pool = SlurmPool(work_dir, job_name='test_slurmpool', submitit_kwargs=submitit_kwargs)
     fun = lambda x: x ** 2
     points = [2, 3, 4]
     res_expected = [fun(point) for point in points]
