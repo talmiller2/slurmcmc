@@ -42,12 +42,12 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
 
     else:
 
-        if load_restart:
-            if submitit_kwargs is None:
-                submitit_kwargs = {}
-            if botorch_kwargs is None:
-                botorch_kwargs = {}
+        if submitit_kwargs is None:
+            submitit_kwargs = {}
+        if botorch_kwargs is None:
+            botorch_kwargs = {}
 
+        if load_restart:
             if verbosity >= 1:
                 logging.info('loading restart file: ' + work_dir + '/' + restart_file)
 
