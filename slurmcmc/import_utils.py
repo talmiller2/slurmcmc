@@ -5,32 +5,67 @@ import sys
 
 def import_function_from_module(module_dir, module_name, function_name):
     """
-    Import a function defined in a python file that is not in the same directory of the running script.
+    import a function defined in a python file in a remote directory.
     """
-    if os.path.isdir(module_dir):
-        sys.path.insert(0, module_dir)
-    else:
-        raise ValueError('directory ' + module_dir + ' does not exist.')
-    module = importlib.import_module(module_name)
-    importlib.reload(module)  # refreshes the definitions in case the module was already loaded and was changed
-    imported_function = getattr(module, function_name)
-    return imported_function
+    if not os.path.isdir(module_dir):
+        raise ValueError(f'Directory {module_dir} does not exist.')
+    sys.path.insert(0, module_dir)
+
+    try:
+        module = importlib.import_module(module_name)
+        importlib.reload(module)  # Refresh definitions in case the module changed
+        imported_function = getattr(module, function_name)
+        return imported_function
+    finally:
+        # clean up sys.path to avoid side effects
+        sys.path.pop(0)
 
 
-def imported_fun(x, extra_arg):
-    '''
-    Define a function that is imported from a different dir than the main dir.
-    Allows the function to be passed through the submitit pipeline without error.
-    To use, pass module_dict as an extra_arg when defining slurm_utils.SlurmPool.
-    Note that the imported function must be of the form fun(x, extra_arg) even if extra_arg is not used.
-    '''
-    if type(extra_arg) != dict:
-        raise TypeError('the extra_arg to the imported_fun needs to be a dictionary.')
-    if 'imported_fun_dict' in extra_arg:
-        imported_fun_dict = extra_arg['imported_fun_dict']
+class DeferredImportFunction:
+    """
+    A callable that defers importing a function until it's actually called.
+    """
+
+    def __init__(self, module_dir, module_name, function_name):
+        self.module_dir = module_dir
+        self.module_name = module_name
+        self.function_name = function_name
+
+    def __call__(self, *args, **kwargs):
+        # Import the function only when called
+        imported_fun = import_function_from_module(self.module_dir, self.module_name, self.function_name)
+        return imported_fun(*args, **kwargs)
+
+    def __getstate__(self):
+        # Ensure only the attributes are pickled, not the imported function
+        return {'module_dir': self.module_dir, 'module_name': self.module_name, 'function_name': self.function_name}
+
+    def __setstate__(self, state):
+        # Reconstruct the object from the pickled state
+        self.module_dir = state['module_dir']
+        self.module_name = state['module_name']
+        self.function_name = state['function_name']
+
+
+def deferred_import_function_wrapper(fun):
+    if callable(fun) == True:
+        return fun
+    elif type(fun) == dict:
+        if 'module_dir' in fun.keys():
+            module_dir = fun['module_dir']
+        else:
+            raise ValueError('input is a dict, but does not contain module_dir key.')
+        if 'module_name' in fun.keys():
+            module_name = fun['module_name']
+        else:
+            raise ValueError('input is a dict, but does not contain module_name key.')
+        if 'function_name' in fun.keys():
+            function_name = fun['function_name']
+        else:
+            raise ValueError('input is a dict, but does not contain function_name key.')
+
+        # Return a deferred function object instead of importing immediately
+        deferred_import_function = DeferredImportFunction(module_dir, module_name, function_name)
+        return deferred_import_function
     else:
-        imported_fun_dict = extra_arg
-    fun = import_function_from_module(module_dir=imported_fun_dict['module_dir'],
-                                      module_name=imported_fun_dict['module_name'],
-                                      function_name=imported_fun_dict['function_name'])
-    return fun(x, extra_arg)
+        raise ValueError('input should be function or dictionary, type(fun)=', type(fun))

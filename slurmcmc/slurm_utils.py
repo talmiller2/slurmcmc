@@ -6,6 +6,7 @@ import numpy as np
 import submitit
 
 from slurmcmc.general_utils import combine_args, set_logging, save_extra_arg_to_file, point_to_tuple, list_directories
+from slurmcmc.import_utils import deferred_import_function_wrapper
 
 
 class SlurmPool():
@@ -45,11 +46,13 @@ class SlurmPool():
 
         set_logging(self.work_dir, self.log_file)
 
-        if cluster in ['local', 'slurm'] and len(list_directories(work_dir)) > 0:
-            error_msg = 'work_dir appears to already contain runs, move or delete it first.'
-            error_msg += '\n' + 'work_dir:' + work_dir
-            raise ValueError(error_msg)
-            # in case of continuing from restart, SlurmPool is loaded and not initialized so will not error.
+        if cluster in ['local', 'slurm']:
+            os.makedirs(work_dir, exist_ok=True)
+            if len(list_directories(work_dir)) > 0:
+                error_msg = 'work_dir appears to already contain runs, move or delete it first.'
+                error_msg += '\n' + 'work_dir:' + work_dir
+                raise ValueError(error_msg)
+                # in case of continuing from restart, SlurmPool is loaded and not initialized so will not error.
 
         # capability to call the function with additional argument that is constant during the map
         self.extra_arg = extra_arg
@@ -57,6 +60,8 @@ class SlurmPool():
         return
 
     def map(self, fun, points):
+        fun = deferred_import_function_wrapper(fun)
+
         # split points into chunks if exceeding budget
         chunks = self.split_points(points, self.budget)
         chunk_sizes = [len(chunk) for chunk in chunks]
