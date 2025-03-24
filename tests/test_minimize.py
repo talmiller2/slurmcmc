@@ -10,6 +10,8 @@ from slurmcmc.optimization import slurm_minimize
 from slurmcmc.slurm_utils import is_slurm_cluster
 
 submitit_kwargs = {'slurm_partition': 'core', 'timeout_min': 10}
+
+
 # submitit_kwargs = {'slurm_constraint': 'serial'}
 
 @pytest.fixture
@@ -93,6 +95,16 @@ def constraint_fun_with_extra_arg():
     return _constraint_fun_with_extra_arg
 
 
+@pytest.fixture(scope="module")
+def imported_constraint_fun_dict():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    return {
+        'module_dir': os.path.join(base_dir, 'example_module_dir'),
+        'module_name': 'example_module',
+        'function_name': 'example_constraint_fun'
+    }
+
+
 def test_slurm_minimize_1param(verbosity, seed, loss_fun_1d):
     num_params = 1
     param_bounds = [[-5, 5] for _ in range(num_params)]
@@ -117,6 +129,22 @@ def test_slurm_minimize_1param_local(work_dir, verbosity, seed, loss_fun_1d):
     result = slurm_minimize(loss_fun=loss_fun_1d,
                             param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
                             work_dir=work_dir, cluster='local', verbosity=verbosity)
+
+
+def test_slurm_minimize_2params_local_with_imported_constraint_fun(work_dir, verbosity, seed, loss_fun,
+                                                                   imported_constraint_fun_dict):
+    num_params = 2
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    expected_minima_point = np.ones(num_params)
+    num_workers = 3
+    num_iters = 3
+
+    result = slurm_minimize(loss_fun=loss_fun, constraint_fun=imported_constraint_fun_dict,
+                            param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                            work_dir=work_dir, cluster='local', verbosity=verbosity)
+
+    assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.5
+    assert result['loss_min'] <= 0.1
 
 
 def test_slurm_minimize_2params(verbosity, seed, loss_fun):

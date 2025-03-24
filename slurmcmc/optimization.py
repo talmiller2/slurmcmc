@@ -8,6 +8,7 @@ import submitit
 
 from slurmcmc.botorch_optimizer import BoTorchOptimizer
 from slurmcmc.general_utils import set_logging, save_restart_file, load_restart_file, combine_args, point_to_tuple
+from slurmcmc.import_utils import deferred_import_function_wrapper
 from slurmcmc.slurm_utils import SlurmPool
 
 
@@ -48,6 +49,9 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
             submitit_kwargs = {}
         if botorch_kwargs is None:
             botorch_kwargs = {}
+
+        if constraint_fun is not None:
+            constraint_fun = deferred_import_function_wrapper(constraint_fun)
 
         if load_restart:
             if verbosity >= 1:

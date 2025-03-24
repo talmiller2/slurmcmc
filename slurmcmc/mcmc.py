@@ -7,6 +7,7 @@ import submitit
 
 from slurmcmc.general_utils import (set_logging, save_restart_file, load_restart_file, save_extra_arg_to_file,
                                     point_to_tuple)
+from slurmcmc.import_utils import deferred_import_function_wrapper
 from slurmcmc.slurm_utils import SlurmPool
 
 
@@ -44,6 +45,8 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
             submitit_kwargs = {}
         if emcee_kwargs is None:
             emcee_kwargs = {}
+
+        log_prob_fun = deferred_import_function_wrapper(log_prob_fun)
 
         if load_restart:
             if verbosity >= 1:
