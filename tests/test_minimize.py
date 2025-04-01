@@ -8,11 +8,7 @@ from scipy.optimize import rosen
 from slurmcmc.general_utils import delete_directory
 from slurmcmc.optimization import slurm_minimize
 from slurmcmc.slurm_utils import is_slurm_cluster
-
-submitit_kwargs = {'slurm_partition': 'core', 'timeout_min': 10}
-
-
-# submitit_kwargs = {'slurm_constraint': 'serial'}
+from tests.submitit_defaults import submitit_kwargs
 
 @pytest.fixture
 def work_dir(request):

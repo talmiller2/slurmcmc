@@ -4,9 +4,7 @@ import pytest
 
 from slurmcmc.general_utils import delete_directory
 from slurmcmc.slurm_utils import SlurmPool, is_slurm_cluster
-
-submitit_kwargs = {'slurm_partition': 'core', 'timeout_min': 10}
-# submitit_kwargs = {'slurm_constraint': 'serial'}
+from tests.submitit_defaults import submitit_kwargs
 
 @pytest.fixture()
 def work_dir(request):

@@ -36,7 +36,7 @@ class SlurmPool():
         if 'slurm_job_name' not in submitit_kwargs:
             submitit_kwargs['slurm_job_name'] = job_name
         if 'timeout_min' not in submitit_kwargs:
-            submitit_kwargs['timeout_min'] = int(1e8)
+            submitit_kwargs['timeout_min'] = int(60 * 24 * 30) # 1 month
         if 'budget' not in submitit_kwargs:
             self.budget = int(1e6)
         else:

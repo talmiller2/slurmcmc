@@ -35,7 +35,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
         if 'slurm_job_name' not in remote_submitit_kwargs:
             remote_submitit_kwargs['slurm_job_name'] = 'main_' + job_name
         if 'timeout_min' not in remote_submitit_kwargs:
-            remote_submitit_kwargs['timeout_min'] = int(1e8)
+            remote_submitit_kwargs['timeout_min'] = int(60 * 24 * 30) # 1 month
         kwargs = locals()
         kwargs['remote'] = False
         executor = submitit.AutoExecutor(folder=work_dir, cluster=remote_cluster)
