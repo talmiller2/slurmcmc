@@ -36,19 +36,19 @@ def test_slurmpool_slurm(work_dir):
 def test_slurmpool_slurm_job_timeout_fail(work_dir):
     # define function that sleeps before returning result
     def fun(x):
-        time.sleep(30)
+        time.sleep(120)
         return x ** 2
 
     # revise submitit_kwargs to have a short timeout
     submitit_kwargs_short_timeout = copy.deepcopy(submitit_kwargs)
     submitit_kwargs_short_timeout.pop('timeout_min')
-    submitit_kwargs_short_timeout['slurm_additional_parameters']['time'] = '00:05'  # 5 seconds
-    submitit_kwargs_short_timeout['signal_delay_s'] = 1
+    submitit_kwargs_short_timeout['slurm_additional_parameters']['time'] = '00:00:10'  # 10 seconds
+    submitit_kwargs_short_timeout['slurm_signal_delay_s'] = 5
 
     job_fail_value = np.nan
     slurm_pool = SlurmPool(work_dir, job_name='test_slurmpool', cluster='slurm',
                            submitit_kwargs=submitit_kwargs_short_timeout, job_fail_value=job_fail_value)
-    points = [1, 2]
+    points = [5, 6]
     res_expected = [job_fail_value for _ in points]  # all jobs should fail due to timeout
     res = slurm_pool.map(fun, points)
     assert res == res_expected
