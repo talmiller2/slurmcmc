@@ -93,5 +93,5 @@ def test_slurmpool_local_imported_fun_fail(work_dir, fun_with_extra_arg, verbosi
     slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity, extra_arg=setup_dict,
                            job_fail_value=job_fail_value)
     res = slurm_pool.map(fun_with_extra_arg, points)
-    res_expected = [job_fail_value for _ in range(len(points))]
+    res_expected = [job_fail_value for _ in points]
     np.testing.assert_array_equal(res, res_expected)

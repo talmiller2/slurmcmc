@@ -1,10 +1,14 @@
+import copy
 import os
+import time
 
+import numpy as np
 import pytest
 
 from slurmcmc.general_utils import delete_directory
 from slurmcmc.slurm_utils import SlurmPool, is_slurm_cluster
 from tests.submitit_defaults import submitit_kwargs
+
 
 @pytest.fixture()
 def work_dir(request):
@@ -24,5 +28,27 @@ def test_slurmpool_slurm(work_dir):
     fun = lambda x: x ** 2
     points = [2, 3, 4]
     res_expected = [fun(point) for point in points]
+    res = slurm_pool.map(fun, points)
+    assert res == res_expected
+
+
+@pytest.mark.skipif(not is_slurm_cluster(), reason="This test only runs on a Slurm cluster")
+def test_slurmpool_slurm_job_timeout_fail(work_dir):
+    # define function that sleeps before returning result
+    def fun(x):
+        time.sleep(30)
+        return x ** 2
+
+    # revise submitit_kwargs to have a short timeout
+    submitit_kwargs_short_timeout = copy.deepcopy(submitit_kwargs)
+    submitit_kwargs_short_timeout.pop('timeout_min')
+    submitit_kwargs_short_timeout['slurm_additional_parameters']['time'] = '00:05'  # 5 seconds
+    submitit_kwargs_short_timeout['signal_delay_s'] = 1
+
+    job_fail_value = np.nan
+    slurm_pool = SlurmPool(work_dir, job_name='test_slurmpool', cluster='slurm',
+                           submitit_kwargs=submitit_kwargs_short_timeout, job_fail_value=job_fail_value)
+    points = [1, 2]
+    res_expected = [job_fail_value for _ in points]  # all jobs should fail due to timeout
     res = slurm_pool.map(fun, points)
     assert res == res_expected
