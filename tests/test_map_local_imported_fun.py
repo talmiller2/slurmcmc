@@ -1,5 +1,6 @@
 import os
 
+import numpy as np
 import pytest
 
 from slurmcmc.general_utils import delete_directory
@@ -88,6 +89,9 @@ def test_slurmpool_local_imported_fun_fail(work_dir, fun_with_extra_arg, verbosi
     """
     setup_dict = {'weather': 'sunny'}
     points = [2, 3, 4]
-    slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity, extra_arg=setup_dict)
-    with pytest.raises(Exception):
-        slurm_pool.map(fun_with_extra_arg, points)
+    job_fail_value = np.nan
+    slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity, extra_arg=setup_dict,
+                           job_fail_value=job_fail_value)
+    res = slurm_pool.map(fun_with_extra_arg, points)
+    res_expected = [job_fail_value for _ in range(len(points))]
+    np.testing.assert_array_equal(res, res_expected)

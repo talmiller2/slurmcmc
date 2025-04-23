@@ -18,6 +18,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                    verbosity=1, slurm_vebosity=0, log_file=None, extra_arg=None,
                    save_restart=False, load_restart=False, restart_file='opt_restart.pkl',
                    work_dir='minimize', job_name='minimize', cluster='slurm', submitit_kwargs=None,
+                   job_fail_value=np.nan,
                    # remote run params:
                    remote=False, remote_cluster='slurm', remote_submitit_kwargs=None,
                    ):
@@ -102,7 +103,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                 raise ValueError('invalid optimizer_package:', optimizer_package)
 
             slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, log_file=log_file,
-                                   extra_arg=extra_arg, submitit_kwargs=submitit_kwargs)
+                                   extra_arg=extra_arg, submitit_kwargs=submitit_kwargs, job_fail_value=job_fail_value)
             ini_iter = 0
             num_loss_fun_calls_total = 0
             num_constraint_fun_calls_total = 0

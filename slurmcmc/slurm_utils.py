@@ -19,7 +19,8 @@ class SlurmPool():
     """
 
     def __init__(self, work_dir='slurmpool', job_name='slurmpool', cluster='slurm',
-                 verbosity=1, log_file=None, extra_arg=None, submitit_kwargs=None):
+                 verbosity=1, log_file=None, extra_arg=None, submitit_kwargs=None,
+                 job_fail_value=np.nan):
         self.num_calls = 0
         self.points_history = []
         self.values_history = []
@@ -43,7 +44,7 @@ class SlurmPool():
             self.budget = submitit_kwargs['budget']
             submitit_kwargs.pop('budget')  # remove because submitit does not actually take this argument
         self.submitit_kwargs = submitit_kwargs
-
+        self.job_fail_value = job_fail_value
         set_logging(self.work_dir, self.log_file)
 
         if cluster in ['local', 'slurm']:
@@ -130,14 +131,13 @@ class SlurmPool():
         return dim
 
     def check_failed(self, r):
-        if r == None:
-            return True
-        elif type(r) in [np.ndarray, float]:
-            return np.all(np.isnan(r))
-        elif type(r) == list:
-            for e in r:
-                if e == None or np.isnan(e):
-                    return True
+        if type(r) == list or (type(r) == np.ndarray and r.ndim > 0):
+            pass
+        else:
+            r = [r]
+        for e in r:
+            if e == None or np.isnan(e) or e == self.job_fail_value:
+                return True
         return False
 
     def add_to_history(self, x_history, x, dim):
@@ -191,7 +191,12 @@ class SlurmPool():
         # collect the results
         outputs = []
         for ind_point, job in enumerate(jobs):
-            output = job.result()
+            try:
+                output = job.result()
+            except Exception as e:
+                if self.verbosity >= 1:
+                    logging.info('job.result() failed. The exception message:\n' + str(e))
+                output = self.job_fail_value
             point_dir = iteration_dir + '/' + str(ind_point)
             np.savetxt(point_dir + '/output.txt', [output])
             outputs += [output]

@@ -10,6 +10,7 @@ from slurmcmc.optimization import slurm_minimize
 from slurmcmc.slurm_utils import is_slurm_cluster
 from tests.submitit_defaults import submitit_kwargs
 
+
 @pytest.fixture
 def work_dir(request):
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -35,9 +36,20 @@ def verbosity():
 @pytest.fixture()
 def loss_fun_1d():
     def _loss_fun_1d(x):
-        return (x - 1) ** 2
+        return float((x - 1) ** 2)
 
     return _loss_fun_1d
+
+
+@pytest.fixture()
+def loss_fun_1d_partially_nan():
+    def _loss_fun_1d_partially_nan(x):
+        if x > 0.5:
+            return float((x - 1) ** 2)
+        else:
+            return np.nan
+
+    return _loss_fun_1d_partially_nan
 
 
 @pytest.fixture()
@@ -114,6 +126,22 @@ def test_slurm_minimize_1param(verbosity, seed, loss_fun_1d):
 
     assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.02
     assert result['loss_min'] <= 1e-3
+
+
+def test_slurm_minimize_1param_partially_nan_function(verbosity, seed, loss_fun_1d_partially_nan):
+    num_params = 1
+    param_bounds = [[-5, 5] for _ in range(num_params)]
+    expected_minima_point = np.ones(num_params)
+    num_workers = 5
+    num_iters = 15
+
+    result = slurm_minimize(loss_fun=loss_fun_1d_partially_nan,
+                            param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                            cluster='local-map', verbosity=verbosity)
+
+    assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.02
+    assert result['loss_min'] <= 1e-3
+    assert len(result['slurm_pool'].failed_points_history) > 0  # check some points indeed count as failing
 
 
 def test_slurm_minimize_1param_local(work_dir, verbosity, seed, loss_fun_1d):
