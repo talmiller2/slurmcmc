@@ -105,7 +105,7 @@ def test_slurmpool_localmap_history_2params(verbosity):
 
 
 def test_slurmpool_localmap_with_budget(verbosity):
-    slurm_pool = SlurmPool(cluster='local-map', verbosity=verbosity, submitit_kwargs={'budget': 2})
+    slurm_pool = SlurmPool(cluster='local-map', verbosity=verbosity, budget=2)
     fun = lambda x: x ** 2
     points = [2, 3, 4, 5, 6]
     res_expected = [fun(point) for point in points]
@@ -182,10 +182,14 @@ def test_slurmpool_localmap_2params_3outputs_history_with_failed_points(verbosit
     fun = lambda x: [2 * x[0], 3 * x[0], 4 * x[1]]
     fun_that_partially_fails_1 = lambda x: [2 * x[0], None, 4 * x[1]]
     fun_that_partially_fails_2 = lambda x: [2 * x[0], 3 * x[0], np.nan]
+    fun_that_partially_fails_3 = lambda x: None
+    fun_that_partially_fails_4 = lambda x: np.nan
     points = [[2, 3], [3, 4], [4, 5]]
     res = slurm_pool.map(fun, points)
     _ = slurm_pool.map(fun_that_partially_fails_1, points)
     _ = slurm_pool.map(fun_that_partially_fails_2, points)
+    _ = slurm_pool.map(fun_that_partially_fails_3, points)
+    _ = slurm_pool.map(fun_that_partially_fails_4, points)
 
     np.testing.assert_array_equal(slurm_pool.points_history, np.array(points))
     np.testing.assert_array_equal(slurm_pool.values_history, np.array(res).reshape(-1, 1))

@@ -84,7 +84,7 @@ def test_slurm_mcmc_with_budget(verbosity, seed):
     init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
     status = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
                         verbosity=verbosity, slurm_vebosity=verbosity,
-                        cluster='local-map', submitit_kwargs={'budget': 5})
+                        cluster='local-map', budget=5)
     num_calculated_points = num_walkers * (num_iters + 1)
     np.testing.assert_equal(status['slurm_pool'].points_history.shape, (num_calculated_points, num_params))
     assert status['slurm_pool'].num_calls == 8

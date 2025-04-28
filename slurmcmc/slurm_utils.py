@@ -20,7 +20,7 @@ class SlurmPool():
 
     def __init__(self, work_dir='slurmpool', job_name='slurmpool', cluster='slurm',
                  verbosity=1, log_file=None, extra_arg=None, submitit_kwargs=None,
-                 job_fail_value=np.nan):
+                 budget=int(1e6), job_fail_value=np.nan):
         self.num_calls = 0
         self.points_history = []
         self.values_history = []
@@ -38,12 +38,8 @@ class SlurmPool():
             submitit_kwargs['slurm_job_name'] = job_name
         if 'timeout_min' not in submitit_kwargs:
             submitit_kwargs['timeout_min'] = int(60 * 24 * 30) # 1 month
-        if 'budget' not in submitit_kwargs:
-            self.budget = int(1e6)
-        else:
-            self.budget = submitit_kwargs['budget']
-            submitit_kwargs.pop('budget')  # remove because submitit does not actually take this argument
         self.submitit_kwargs = submitit_kwargs
+        self.budget = budget
         self.job_fail_value = job_fail_value
         set_logging(self.work_dir, self.log_file)
 
