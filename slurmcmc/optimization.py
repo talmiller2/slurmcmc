@@ -214,7 +214,9 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
             loc_point_min_per_iter += [curr_iter_loc_point_min]
 
             if verbosity >= 2:
-                logging.info('    curr best: x_min: ' + str(x_min) + ', loss_min: ' + str(loss_min))
+                logging.info('    curr loss_min: ' + str(loss_min) + ', curr x_min: ' + str(x_min))
+            elif verbosity >= 1:
+                logging.info('    curr loss_min: ' + str(loss_min))
 
             # optimization status
             status = {}
