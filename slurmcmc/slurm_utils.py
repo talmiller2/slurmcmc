@@ -30,9 +30,11 @@ class SlurmPool():
             raise ValueError('dim_output must be a positive integer. dim_output=', dim_output)
         self.dim_output = dim_output
         self.num_calls = 0  # initialize counter
+        self.num_evaluated_points = 0  # initialize counter
         self.points_history = []  # all points
         self.values_history = []  # function values of all points
-        self.failed_points_history = []
+        self.inds_success_points = []  # indices of points that were successfully calculated
+        self.inds_failed_points = []  # indices of points where the calculation failed
         # for fast checking of points that appear in points_history
         self.evaluated_points_set = set()
         self.point_loc_dict = {}
@@ -125,17 +127,26 @@ class SlurmPool():
         self.num_calls += 1
 
         # update history arrays
-        inds_failed = [i for i, r in enumerate(res) if self.check_failed(r)]
-        inds_success = [i for i, r in enumerate(res) if i not in inds_failed]
-        failed_points = np.array([p for i, p in enumerate(points) if i in inds_failed])
-        success_points = np.array([p for i, p in enumerate(points) if i in inds_success])
-        success_values = np.array([v for i, v in enumerate(res) if i in inds_success])
-        success_values = success_values.reshape(-1, 1)  # switch to column array
-        if len(inds_failed) > 0:
-            self.failed_points_history = self.add_to_history(self.failed_points_history, failed_points, dim=self.dim_input)
-        if len(inds_success) > 0:
-            self.points_history = self.add_to_history(self.points_history, success_points, dim=self.dim_input)
-            self.values_history = self.add_to_history(self.values_history, success_values, dim=self.dim_output)
+        # inds_failed = [i for i, r in enumerate(res) if self.check_failed(r)]
+        # inds_success = [i for i, r in enumerate(res) if i not in inds_failed]
+        # failed_points = np.array([p for i, p in enumerate(points) if i in inds_failed])
+        # success_points = np.array([p for i, p in enumerate(points) if i in inds_success])
+        # success_values = np.array([v for i, v in enumerate(res) if i in inds_success])
+        # success_values = success_values.reshape(-1, 1)  # switch to column array
+        # if len(inds_failed) > 0:
+        #     self.failed_points_history = self.add_to_history(self.failed_points_history, failed_points, dim=self.dim_input)
+        # if len(inds_success) > 0:
+        #     self.points_history = self.add_to_history(self.points_history, success_points, dim=self.dim_input)
+        #     self.values_history = self.add_to_history(self.values_history, success_values, dim=self.dim_output)
+
+
+        inds_failed = [self.num_evaluated_points + i for i, v in enumerate(res) if self.check_failed(v)]
+        inds_success = [self.num_evaluated_points + i for i, v in enumerate(res) if not self.check_failed(v)]
+        self.inds_failed_points += inds_failed
+        self.inds_success_points += inds_success
+        self.points_history = self.add_to_history(self.points_history, np.array(points), dim=self.dim_input)
+        self.values_history = self.add_to_history(self.values_history, np.array(res), dim=self.dim_output)
+        self.num_evaluated_points += len(res)
 
         return res
 

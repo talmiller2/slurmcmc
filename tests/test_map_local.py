@@ -1,6 +1,7 @@
 import os
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from slurmcmc.general_utils import delete_directory, point_to_tuple
@@ -83,11 +84,13 @@ def test_slurmpool_localmap_history_with_failed_points(verbosity):
     res_1 = slurm_pool.map(fun, points_1)
     points_2 = [5, 6, 7]
     res_2 = slurm_pool.map(fun_that_fails, points_2)
-
-    np.testing.assert_array_equal(slurm_pool.points_history, np.array(points_1).reshape(-1, 1))
-    np.testing.assert_array_equal(slurm_pool.values_history, np.array(res_1).reshape(-1, 1))
-    assert all(r is None for r in res_2)  # Check that all elements in res_2 are None
-    np.testing.assert_array_equal(slurm_pool.failed_points_history, np.array(points_2).reshape(-1, 1))
+    all_points = points_1 + points_2
+    all_res = res_1 + res_2
+    assert slurm_pool.num_evaluated_points == len(all_points)
+    np.testing.assert_array_equal(slurm_pool.points_history, np.array(all_points).reshape(-1, 1))
+    np.testing.assert_array_equal(slurm_pool.values_history, np.array(all_res).reshape(-1, 1))
+    np.testing.assert_array_equal(slurm_pool.inds_success_points, [0, 1, 2])
+    np.testing.assert_array_equal(slurm_pool.inds_failed_points, [3, 4, 5])
 
 
 def test_slurmpool_localmap_2params(verbosity):
@@ -154,7 +157,8 @@ def test_slurmpool_local_2params(work_dir, verbosity):
 
 
 def test_slurmpool_local_2params_with_log_file(work_dir, verbosity):
-    slurm_pool = SlurmPool(work_dir=work_dir, dim_input=2, dim_output=1, cluster='local', verbosity=verbosity, log_file='log_file.txt')
+    slurm_pool = SlurmPool(work_dir=work_dir, dim_input=2, dim_output=1, cluster='local', verbosity=verbosity,
+                           log_file='log_file.txt')
     fun = lambda x: x[0] ** 2 + x[1] ** 2
     points = [[2, 3], [3, 4], [4, 5]]
     slurm_pool.map(fun, points)
@@ -185,19 +189,35 @@ def test_slurmpool_localmap_2params_3outputs(verbosity):
     assert res == res_expected
 
 
+# def normalize_array(arr):
+#     arr_float = np.array(arr)
+#     for i, vi in enumerate(arr_float):
+#         for j, vj in enumerate(vi):
+#             if isinstance(vj, (int, float)) and not np.isnan(vj):
+#                 arr_float[i, j] = float(vj)
+#             elif np.isnan(vj):
+#                 arr_float[i, j] = None
+#     return arr_float
+
 def test_slurmpool_localmap_2params_3outputs_history_with_failed_points(verbosity):
     slurm_pool = SlurmPool(dim_input=2, dim_output=3, cluster='local-map', verbosity=verbosity)
     fun = lambda x: [2 * x[0], 3 * x[0], 4 * x[1]]
     fun_that_partially_fails_1 = lambda x: [2 * x[0], None, 4 * x[1]]
     fun_that_partially_fails_2 = lambda x: [2 * x[0], 3 * x[0], np.nan]
     points = [[2, 3], [3, 4], [4, 5]]
-    res = slurm_pool.map(fun, points)
-    _ = slurm_pool.map(fun_that_partially_fails_1, points)
-    _ = slurm_pool.map(fun_that_partially_fails_2, points)
-
-    np.testing.assert_array_equal(slurm_pool.points_history, np.array(points))
-    np.testing.assert_array_equal(slurm_pool.values_history, np.array(res).reshape(-1, 1))
-    np.testing.assert_array_equal(slurm_pool.failed_points_history, np.vstack([points, points]))
+    res_1 = slurm_pool.map(fun, points)
+    res_2 = slurm_pool.map(fun_that_partially_fails_1, points)
+    res_3 = slurm_pool.map(fun_that_partially_fails_2, points)
+    all_points = points + points + points
+    all_res = res_1 + res_2 + res_3
+    assert slurm_pool.num_evaluated_points == len(all_points)
+    np.testing.assert_array_equal(slurm_pool.points_history, np.array(all_points))
+    np.testing.assert_array_equal(slurm_pool.inds_success_points, [0, 1, 2])
+    np.testing.assert_array_equal(slurm_pool.inds_failed_points, [3, 4, 5, 6, 7, 8])
+    # check values_history contains the right values, where ints and floats are considered the same
+    df1 = pd.DataFrame(slurm_pool.values_history)
+    df2 = pd.DataFrame(np.array(all_res))
+    pd.testing.assert_frame_equal(df1, df2, check_dtype=False, check_exact=False)
 
 
 def test_slurmpool_localmap_with_extra_arg(verbosity, fun_with_extra_arg):

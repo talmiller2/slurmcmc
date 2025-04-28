@@ -141,7 +141,7 @@ def test_slurm_minimize_1param_partially_nan_function(verbosity, seed, loss_fun_
 
     assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.02
     assert result['loss_min'] <= 1e-3
-    assert len(result['slurm_pool'].failed_points_history) > 0  # check some points indeed count as failing
+    assert len(result['slurm_pool'].inds_failed_points) > 0  # check some points indeed count as failing
 
 
 def test_slurm_minimize_1param_local(work_dir, verbosity, seed, loss_fun_1d):
