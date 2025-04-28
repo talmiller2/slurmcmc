@@ -102,7 +102,8 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                 raise ValueError('invalid optimizer_package:', optimizer_package)
 
             slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, log_file=log_file,
-                                   extra_arg=extra_arg, submitit_kwargs=submitit_kwargs, budget=budget,
+                                   extra_arg=extra_arg, submitit_kwargs=submitit_kwargs,
+                                   dim_input=len(param_bounds), dim_output=1, budget=budget,
                                    job_fail_value=job_fail_value)
             ini_iter = 0
             num_loss_fun_calls_total = 0

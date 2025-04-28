@@ -6,7 +6,7 @@ import numpy as np
 import submitit
 
 from slurmcmc.general_utils import (set_logging, save_restart_file, load_restart_file, save_extra_arg_to_file,
-                                    point_to_tuple)
+                                    point_to_tuple, calc_dimension)
 from slurmcmc.import_utils import deferred_import_function_wrapper
 from slurmcmc.slurm_utils import SlurmPool
 
@@ -61,7 +61,8 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
         else:
             # using extra_arg=None because emcee deals with extra_arg internally by wrapping the function
             slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, extra_arg=extra_arg,
-                                   submitit_kwargs=submitit_kwargs, budget=budget, job_fail_value=job_fail_value)
+                                   submitit_kwargs=submitit_kwargs, dim_input=init_points.shape[1], dim_output=1,
+                                   budget=budget, job_fail_value=job_fail_value)
 
             # save the extra_arg in the work folder to document the full input used
             if cluster != 'local-map':

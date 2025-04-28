@@ -5,7 +5,8 @@ import shutil
 import numpy as np
 import submitit
 
-from slurmcmc.general_utils import combine_args, set_logging, save_extra_arg_to_file, point_to_tuple, list_directories
+from slurmcmc.general_utils import (combine_args, set_logging, save_extra_arg_to_file, point_to_tuple, list_directories,
+                                    calc_dimension)
 from slurmcmc.import_utils import deferred_import_function_wrapper
 
 
@@ -20,11 +21,19 @@ class SlurmPool():
 
     def __init__(self, work_dir='slurmpool', job_name='slurmpool', cluster='slurm',
                  verbosity=1, log_file=None, extra_arg=None, submitit_kwargs=None,
+                 dim_input=None, dim_output=None,
                  budget=int(1e6), job_fail_value=np.nan):
-        self.num_calls = 0
-        self.points_history = []
-        self.values_history = []
+        if not isinstance(dim_input, int) and not dim_input > 0:
+            raise ValueError('dim_input must be a positive integer. dim_input=', dim_input)
+        self.dim_input = dim_input
+        if not isinstance(dim_output, int) and not dim_output > 0:
+            raise ValueError('dim_output must be a positive integer. dim_output=', dim_output)
+        self.dim_output = dim_output
+        self.num_calls = 0  # initialize counter
+        self.points_history = []  # all points
+        self.values_history = []  # function values of all points
         self.failed_points_history = []
+        # for fast checking of points that appear in points_history
         self.evaluated_points_set = set()
         self.point_loc_dict = {}
         self.work_dir = work_dir
@@ -37,7 +46,7 @@ class SlurmPool():
         if 'slurm_job_name' not in submitit_kwargs:
             submitit_kwargs['slurm_job_name'] = job_name
         if 'timeout_min' not in submitit_kwargs:
-            submitit_kwargs['timeout_min'] = int(60 * 24 * 30) # 1 month
+            submitit_kwargs['timeout_min'] = int(60 * 24 * 30)  # 1 month
         self.submitit_kwargs = submitit_kwargs
         self.budget = budget
         self.job_fail_value = job_fail_value
@@ -49,7 +58,7 @@ class SlurmPool():
                 error_msg = 'work_dir appears to already contain runs, move or delete it first.'
                 error_msg += '\n' + 'work_dir:' + work_dir
                 raise ValueError(error_msg)
-                # in case of continuing from restart, SlurmPool is loaded and not initialized so will not error.
+                # note: in case of continuing from restart, SlurmPool is loaded and not initialized so will not error.
 
         # capability to call the function with additional argument that is constant during the map
         self.extra_arg = extra_arg
@@ -87,10 +96,25 @@ class SlurmPool():
         if self.verbosity >= 1:
             logging.info('slurm_pool.map called with ' + str(len(points)) + ' points.')
 
+        # check if points have correct dimensions
+        for point in points:
+            dim_curr_input = calc_dimension(point)
+            if dim_curr_input != self.dim_input:
+                raise ValueError('inconsistent dimensions. expecting dim_input=', self.dim_input,
+                                 'but dim_curr_input=', dim_curr_input)
+
+        # calculate fun on the points
         if self.cluster == 'local-map':
             res = [fun(*self._combine_args(point)) for point in points]
         else:
             res = self.send_and_receive_jobs(fun, points)
+
+        # check if outputs have correct dimensions
+        for output in res:
+            dim_curr_output = calc_dimension(output)
+            if dim_curr_output != self.dim_output:
+                raise ValueError('inconsistent dimensions. expecting dim_output=', self.dim_output,
+                                 'but dim_curr_output=', dim_curr_output)
 
         # track if point was previously evaluated
         for point in points:
@@ -100,10 +124,6 @@ class SlurmPool():
 
         self.num_calls += 1
 
-        # number of parameters (dimension of each point)
-        dim_input = self.calc_dimension(points)
-        dim_output = self.calc_dimension(res)
-
         # update history arrays
         inds_failed = [i for i, r in enumerate(res) if self.check_failed(r)]
         inds_success = [i for i, r in enumerate(res) if i not in inds_failed]
@@ -112,19 +132,12 @@ class SlurmPool():
         success_values = np.array([v for i, v in enumerate(res) if i in inds_success])
         success_values = success_values.reshape(-1, 1)  # switch to column array
         if len(inds_failed) > 0:
-            self.failed_points_history = self.add_to_history(self.failed_points_history, failed_points, dim=dim_input)
+            self.failed_points_history = self.add_to_history(self.failed_points_history, failed_points, dim=self.dim_input)
         if len(inds_success) > 0:
-            self.points_history = self.add_to_history(self.points_history, success_points, dim=dim_input)
-            self.values_history = self.add_to_history(self.values_history, success_values, dim=dim_output)
+            self.points_history = self.add_to_history(self.points_history, success_points, dim=self.dim_input)
+            self.values_history = self.add_to_history(self.values_history, success_values, dim=self.dim_output)
 
         return res
-
-    def calc_dimension(self, points):
-        if np.array(points[0]).shape == ():
-            dim = 1
-        else:
-            dim = np.array(points[0]).shape[0]
-        return dim
 
     def check_failed(self, r):
         if type(r) == list or (type(r) == np.ndarray and r.ndim > 0):

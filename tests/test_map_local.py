@@ -45,7 +45,7 @@ def fun_that_writes_file():
 
 
 def test_slurmpool_localmap(verbosity):
-    slurm_pool = SlurmPool(cluster='local-map', verbosity=verbosity)
+    slurm_pool = SlurmPool(dim_input=1, dim_output=1, cluster='local-map', verbosity=verbosity)
     fun = lambda x: x ** 2
     points = [2, 3, 4]
     res_expected = [fun(point) for point in points]
@@ -53,9 +53,17 @@ def test_slurmpool_localmap(verbosity):
     assert res == res_expected
     assert slurm_pool.num_calls == 1
 
+    # check inconsistent dimension of input/output cause error
+    fun_inconsistent_dim = lambda x: [x ** 2, x ** 3]
+    with pytest.raises(ValueError):
+        _ = slurm_pool.map(fun_inconsistent_dim, points)
+    points_inconsistent_dim = [[2, 2], [3, 3]]
+    with pytest.raises(ValueError):
+        _ = slurm_pool.map(fun, points_inconsistent_dim)
+
 
 def test_slurmpool_localmap_history(verbosity):
-    slurm_pool = SlurmPool(cluster='local-map', verbosity=verbosity)
+    slurm_pool = SlurmPool(dim_input=1, dim_output=1, cluster='local-map', verbosity=verbosity)
     fun = lambda x: x ** 2
     points_1 = [2, 3, 4]
     res_1 = slurm_pool.map(fun, points_1)
@@ -68,7 +76,7 @@ def test_slurmpool_localmap_history(verbosity):
 
 
 def test_slurmpool_localmap_history_with_failed_points(verbosity):
-    slurm_pool = SlurmPool(cluster='local-map', verbosity=verbosity)
+    slurm_pool = SlurmPool(dim_input=1, dim_output=1, cluster='local-map', verbosity=verbosity)
     fun = lambda x: x ** 2
     fun_that_fails = lambda x: None
     points_1 = [2, 3, 4]
@@ -83,7 +91,7 @@ def test_slurmpool_localmap_history_with_failed_points(verbosity):
 
 
 def test_slurmpool_localmap_2params(verbosity):
-    slurm_pool = SlurmPool(cluster='local-map', verbosity=verbosity)
+    slurm_pool = SlurmPool(dim_input=2, dim_output=1, cluster='local-map', verbosity=verbosity)
     fun = lambda x: x[0] ** 2 + x[1] ** 2
     points = [[2, 3], [3, 4], [4, 5]]
     res_expected = [fun(point) for point in points]
@@ -92,7 +100,7 @@ def test_slurmpool_localmap_2params(verbosity):
 
 
 def test_slurmpool_localmap_history_2params(verbosity):
-    slurm_pool = SlurmPool(cluster='local-map', verbosity=verbosity)
+    slurm_pool = SlurmPool(dim_input=2, dim_output=1, cluster='local-map', verbosity=verbosity)
     fun = lambda x: x[0] ** 2 + x[1] ** 2
     points_1 = [[2, 3], [3, 4], [4, 5]]
     res_1 = slurm_pool.map(fun, points_1)
@@ -105,7 +113,7 @@ def test_slurmpool_localmap_history_2params(verbosity):
 
 
 def test_slurmpool_localmap_with_budget(verbosity):
-    slurm_pool = SlurmPool(cluster='local-map', verbosity=verbosity, budget=2)
+    slurm_pool = SlurmPool(dim_input=1, dim_output=1, cluster='local-map', verbosity=verbosity, budget=2)
     fun = lambda x: x ** 2
     points = [2, 3, 4, 5, 6]
     res_expected = [fun(point) for point in points]
@@ -115,7 +123,7 @@ def test_slurmpool_localmap_with_budget(verbosity):
 
 
 def test_slurmpool_local(work_dir, verbosity):
-    slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity)
+    slurm_pool = SlurmPool(dim_input=1, dim_output=1, work_dir=work_dir, cluster='local', verbosity=verbosity)
     fun = lambda x: x ** 2
     points_1 = [2, 3, 4]
     res_expected_1 = [fun(point) for point in points_1]
@@ -137,7 +145,7 @@ def test_slurmpool_local(work_dir, verbosity):
 
 
 def test_slurmpool_local_2params(work_dir, verbosity):
-    slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity)
+    slurm_pool = SlurmPool(work_dir=work_dir, dim_input=2, dim_output=1, cluster='local', verbosity=verbosity)
     fun = lambda x: x[0] ** 2 + x[1] ** 2
     points = [[2, 3], [3, 4], [4, 5]]
     res_expected = [fun(point) for point in points]
@@ -146,14 +154,14 @@ def test_slurmpool_local_2params(work_dir, verbosity):
 
 
 def test_slurmpool_local_2params_with_log_file(work_dir, verbosity):
-    slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity, log_file='log_file.txt')
+    slurm_pool = SlurmPool(work_dir=work_dir, dim_input=2, dim_output=1, cluster='local', verbosity=verbosity, log_file='log_file.txt')
     fun = lambda x: x[0] ** 2 + x[1] ** 2
     points = [[2, 3], [3, 4], [4, 5]]
     slurm_pool.map(fun, points)
 
 
 def test_slurmpool_local_2params_check_query_dir(work_dir, verbosity, fun_that_writes_file):
-    slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity)
+    slurm_pool = SlurmPool(work_dir=work_dir, dim_input=2, dim_output=1, cluster='local', verbosity=verbosity)
     points = [[2, 3], [3, 4], [4, 5]]
     slurm_pool.map(fun_that_writes_file, points)
 
@@ -165,11 +173,11 @@ def test_slurmpool_local_2params_check_query_dir(work_dir, verbosity, fun_that_w
 def test_slurmpool_fail_on_existing_work_dir(work_dir, verbosity):
     os.makedirs(os.path.join(work_dir, '1'), exist_ok=True)
     with pytest.raises(ValueError):
-        SlurmPool(work_dir, cluster='local', verbosity=verbosity)
+        SlurmPool(dim_input=1, dim_output=1, work_dir=work_dir, cluster='local', verbosity=verbosity)
 
 
 def test_slurmpool_localmap_2params_3outputs(verbosity):
-    slurm_pool = SlurmPool(cluster='local-map', verbosity=verbosity)
+    slurm_pool = SlurmPool(dim_input=2, dim_output=3, cluster='local-map', verbosity=verbosity)
     fun = lambda x: [x[0] ** 2 + x[1] ** 2, 10 * x[0], 10 * x[1]]
     points = [[2, 3], [3, 4], [4, 5]]
     res_expected = [fun(point) for point in points]
@@ -178,18 +186,14 @@ def test_slurmpool_localmap_2params_3outputs(verbosity):
 
 
 def test_slurmpool_localmap_2params_3outputs_history_with_failed_points(verbosity):
-    slurm_pool = SlurmPool(cluster='local-map', verbosity=verbosity)
+    slurm_pool = SlurmPool(dim_input=2, dim_output=3, cluster='local-map', verbosity=verbosity)
     fun = lambda x: [2 * x[0], 3 * x[0], 4 * x[1]]
     fun_that_partially_fails_1 = lambda x: [2 * x[0], None, 4 * x[1]]
     fun_that_partially_fails_2 = lambda x: [2 * x[0], 3 * x[0], np.nan]
-    fun_that_partially_fails_3 = lambda x: None
-    fun_that_partially_fails_4 = lambda x: np.nan
     points = [[2, 3], [3, 4], [4, 5]]
     res = slurm_pool.map(fun, points)
     _ = slurm_pool.map(fun_that_partially_fails_1, points)
     _ = slurm_pool.map(fun_that_partially_fails_2, points)
-    _ = slurm_pool.map(fun_that_partially_fails_3, points)
-    _ = slurm_pool.map(fun_that_partially_fails_4, points)
 
     np.testing.assert_array_equal(slurm_pool.points_history, np.array(points))
     np.testing.assert_array_equal(slurm_pool.values_history, np.array(res).reshape(-1, 1))
@@ -198,7 +202,7 @@ def test_slurmpool_localmap_2params_3outputs_history_with_failed_points(verbosit
 
 def test_slurmpool_localmap_with_extra_arg(verbosity, fun_with_extra_arg):
     for weather in ['sunny', 'rainy', None]:
-        slurm_pool = SlurmPool(cluster='local-map', verbosity=verbosity, extra_arg=weather)
+        slurm_pool = SlurmPool(dim_input=1, dim_output=1, cluster='local-map', verbosity=verbosity, extra_arg=weather)
         points = [1, 2, 3]
         if weather is None:  # should fail
             with pytest.raises(TypeError):
@@ -211,7 +215,8 @@ def test_slurmpool_localmap_with_extra_arg(verbosity, fun_with_extra_arg):
 
 def test_slurmpool_local_with_extra_arg(work_dir, verbosity, fun_with_extra_arg):
     weather = 'sunny'
-    slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity, extra_arg=weather)
+    slurm_pool = SlurmPool(work_dir=work_dir, dim_input=1, dim_output=1, cluster='local', verbosity=verbosity,
+                           extra_arg=weather)
     points = [1, 2, 3]
     res_expected = [fun_with_extra_arg(point, weather) for point in points]
     res = slurm_pool.map(fun_with_extra_arg, points)

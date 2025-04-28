@@ -23,7 +23,7 @@ def work_dir(request):
 
 @pytest.mark.skipif(not is_slurm_cluster(), reason="This test only runs on a Slurm cluster")
 def test_slurmpool_slurm(work_dir):
-    slurm_pool = SlurmPool(work_dir, job_name='test_slurmpool', cluster='slurm',
+    slurm_pool = SlurmPool(work_dir=work_dir, dim_input=1, dim_output=1, job_name='test_slurmpool', cluster='slurm',
                            submitit_kwargs=submitit_kwargs)
     fun = lambda x: x ** 2
     points = [2, 3, 4]
@@ -46,7 +46,7 @@ def test_slurmpool_slurm_job_timeout_fail(work_dir):
     submitit_kwargs_short_timeout['slurm_signal_delay_s'] = 5
 
     job_fail_value = np.nan
-    slurm_pool = SlurmPool(work_dir, job_name='test_slurmpool', cluster='slurm',
+    slurm_pool = SlurmPool(work_dir=work_dir, dim_input=1, dim_output=1, job_name='test_slurmpool', cluster='slurm',
                            submitit_kwargs=submitit_kwargs_short_timeout, job_fail_value=job_fail_value)
     points = [5, 6]
     res_expected = [job_fail_value for _ in points]  # all jobs should fail due to timeout

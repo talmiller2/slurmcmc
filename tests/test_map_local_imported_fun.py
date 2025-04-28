@@ -65,7 +65,7 @@ def test_slurmpool_local_imported_fun(work_dir, fun_dict, fun, verbosity):
     """
     points = [2, 3, 4]
     res_expected = [fun(point) for point in points]
-    slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity)
+    slurm_pool = SlurmPool(work_dir=work_dir, dim_input=1, dim_output=1, cluster='local', verbosity=verbosity)
     res = slurm_pool.map(fun_dict, points)
     assert res == res_expected
 
@@ -77,7 +77,8 @@ def test_slurmpool_local_imported_fun_with_extra_arg(work_dir, fun_with_extra_ar
     setup_dict = {'weather': 'sunny'}
     points = [2, 3, 4]
     res_expected = [fun_with_extra_arg(point, setup_dict) for point in points]
-    slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity, extra_arg=setup_dict)
+    slurm_pool = SlurmPool(work_dir=work_dir, dim_input=1, dim_output=1, cluster='local', verbosity=verbosity,
+                           extra_arg=setup_dict)
     res = slurm_pool.map(fun_with_extra_arg_dict, points)
     assert res == res_expected
 
@@ -90,8 +91,8 @@ def test_slurmpool_local_imported_fun_fail(work_dir, fun_with_extra_arg, verbosi
     setup_dict = {'weather': 'sunny'}
     points = [2, 3, 4]
     job_fail_value = np.nan
-    slurm_pool = SlurmPool(work_dir, cluster='local', verbosity=verbosity, extra_arg=setup_dict,
-                           job_fail_value=job_fail_value)
+    slurm_pool = SlurmPool(work_dir=work_dir, dim_input=1, dim_output=1, cluster='local', verbosity=verbosity,
+                           extra_arg=setup_dict, job_fail_value=job_fail_value)
     res = slurm_pool.map(fun_with_extra_arg, points)
     res_expected = [job_fail_value for _ in points]
     np.testing.assert_array_equal(res, res_expected)

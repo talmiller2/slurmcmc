@@ -88,3 +88,12 @@ def list_directories(path):
 def point_to_tuple(point):
     # convert to tuple even in case of 1d point
     return tuple(point) if isinstance(point, (list, set, np.ndarray)) else (point,)
+
+
+def calc_dimension(point):
+    if isinstance(point, (int, float, type(None))):
+        return 1
+    elif isinstance(point, (list, np.ndarray)):
+        return len(point)
+    else:
+        raise TypeError("Unsupported type for point=", point)
