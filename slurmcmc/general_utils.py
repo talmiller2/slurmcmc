@@ -56,8 +56,13 @@ def save_restart_file(status, work_dir, restart_file):
 
 
 def load_restart_file(work_dir, restart_file):
-    with open(work_dir + '/' + restart_file, 'rb') as f:
-        status = pickle.load(f)
+    restart_file_path = work_dir + '/' + restart_file
+    if os.path.exists(restart_file_path):
+        with open(restart_file_path, 'rb') as f:
+            status = pickle.load(f)
+        return status
+    else:
+        raise ValueError('restart_file does not exists. restart_file_path=', restart_file_path)
     return status
 
 
