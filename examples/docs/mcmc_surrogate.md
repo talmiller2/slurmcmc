@@ -15,7 +15,7 @@ However, even if the accuracy is satisfactory on the test set, it might not be a
 (which is not known in advance).
 
 Therefore, using this package could still be useful as a tool to generate training data close to the post-MCMC subspace.
-Meaning, a hybrid approach would to take the following steps: 
+Meaning, a hybrid approach would involve the following steps: 
 1. Start the parallel MCMC with the expensive queries.
 2. Generate enough relevant data.
 3. Train a fast surrogate model (and test its accuracy).
@@ -51,13 +51,13 @@ A corner plot of the MCMC parameter distributions for the expensive vs surrogate
 
 We can see that the distributions are quite similar in this toy example.
 
-For validation, pick 1000 samples from the surrogate-MCMC set, and evaluate the expensive queries on those points.
-Compare the ratio of probabilities between the expensive and surrogate cases (top), 
-and the correlation between the ratio and the log-probability itself (bottom):
+For validation, pick 1000 samples from the surrogate-based MCMC samples set, and evaluate the expensive queries on those points.
+Compare the ratio of probabilities between the expensive and surrogate cases (also known as importance weights) (top figure), 
+and the correlation between the ratio and the log-probability itself (bottom figure):
 
 <img src="pics/example_mcmc_surrogate_importance_weights.png" alt="example_mcmc_surrogate_importance_weights" width="500" height="auto">
 
 We can see that the ratio is close to 1 to within 1%, validating the use of the surrogate model in this example. 
 
-Later, these probability ratios (also known as importance weights) could be used to improve the accuracy of the 
-predictions based on the (surrogate based) MCMC samples set.
+Later, these probability ratios (importance weights) could be used to improve the accuracy of predictions 
+using the surrogate-based MCMC samples set.
