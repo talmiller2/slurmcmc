@@ -5,9 +5,10 @@ import pytest
 from scipy.optimize import rosen
 
 from slurmcmc.general_utils import delete_directory, load_restart_file
-from slurmcmc.mcmc import slurm_mcmc
+from slurmcmc.mcmc import slurm_mcmc, calculate_unique_points_weights
 from slurmcmc.slurm_utils import is_slurm_cluster
 from tests.submitit_defaults import submitit_kwargs
+
 
 @pytest.fixture()
 def work_dir(request):
@@ -67,13 +68,6 @@ def test_slurm_mcmc_local(work_dir, verbosity, seed):
     status = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
                         verbosity=verbosity, slurm_vebosity=verbosity,
                         work_dir=work_dir, cluster='local')
-
-    # test mcmc_points_set and points_weights_dict features of mcmc
-    assert len(status['slurm_pool'].points_history) == num_walkers * (num_iters + 1)
-    sum_weights = 0
-    for mcmc_point in status['sampler'].points_weights_dict.keys():
-        sum_weights += status['sampler'].points_weights_dict[mcmc_point]
-    assert sum_weights == num_walkers * num_iters
 
 
 def test_slurm_mcmc_with_budget(verbosity, seed):
@@ -250,3 +244,12 @@ def test_slurm_remote_slurm_mcmc(work_dir, verbosity, seed):
     np.testing.assert_equal(samples.shape, (num_calculated_points, num_params))
     np.testing.assert_equal(status['slurm_pool'].points_history.shape, (num_calculated_points, num_params))
     assert status['slurm_pool'].num_calls == 7
+
+
+def test_calculate_unique_points_weights(verbosity):
+    points = [[0, 0], [0, 1], [2, 0], [1, 3], [0, 1], [0, 0], [0, 0]]
+    unique_points_set, points_weights_dict = calculate_unique_points_weights(points)
+    unique_points_set_expected = {(0, 0), (0, 1), (1, 3), (2, 0)}
+    points_weights_dict_expected = {(0, 0): 3, (0, 1): 2, (2, 0): 1, (1, 3): 1}
+    assert unique_points_set == unique_points_set_expected, "incorrect unique_points_set"
+    assert points_weights_dict == points_weights_dict_expected, "incorrect points_weights_dict"

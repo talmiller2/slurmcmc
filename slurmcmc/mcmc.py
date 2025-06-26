@@ -6,7 +6,7 @@ import numpy as np
 import submitit
 
 from slurmcmc.general_utils import (set_logging, save_restart_file, load_restart_file, save_extra_arg_to_file,
-                                    point_to_tuple, calc_dimension)
+                                    point_to_tuple)
 from slurmcmc.import_utils import deferred_import_function_wrapper
 from slurmcmc.slurm_utils import SlurmPool
 
@@ -33,7 +33,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
         if 'slurm_job_name' not in remote_submitit_kwargs:
             remote_submitit_kwargs['slurm_job_name'] = 'main_' + job_name
         if 'timeout_min' not in remote_submitit_kwargs:
-            remote_submitit_kwargs['timeout_min'] = int(60 * 24 * 30) # 1 month
+            remote_submitit_kwargs['timeout_min'] = int(60 * 24 * 30)  # 1 month
         kwargs = locals()
         kwargs['remote'] = False
         executor = submitit.AutoExecutor(folder=work_dir, cluster=remote_cluster)
@@ -90,8 +90,6 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
 
             # initializations
             ini_iter = 0
-            sampler.mcmc_points_set = set()
-            sampler.points_weights_dict = {}
 
             # from here on, emcee deals itself with extra arguments by internally wrapping the log_prob_fun,
             # so we remove it from slurm_pool to avoid erroneously double wrapping it
@@ -102,15 +100,6 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
                 logging.info('### curr mcmc iter: ' + str(curr_iter))
             state = sampler.run_mcmc(initial_state=sampler.initial_state, nsteps=1, progress=progress)
             sampler.initial_state = state
-
-            # track the points in the mcmc set and their weights
-            for point in state.coords:
-                point_tuple = point_to_tuple(point)
-                if point_tuple not in sampler.mcmc_points_set:
-                    sampler.mcmc_points_set.add(point_tuple)
-                    sampler.points_weights_dict[point_tuple] = 1  # initialize
-                else:
-                    sampler.points_weights_dict[point_tuple] += 1
 
             # mcmc status
             status = {}
@@ -162,3 +151,20 @@ def get_gelman_rubin_statistic(chains):
     R_hat = np.sqrt(var_hat / W)
 
     return R_hat
+
+
+def calculate_unique_points_weights(samples):
+    """
+    Extract the unique points and their weights (duplicates) from a points samples set.
+    """
+    unique_points_set = set()
+    points_weights_dict = {}
+    for point in samples:
+        point_tuple = point_to_tuple(point)
+        if point_tuple not in unique_points_set:
+            # initialize new point
+            unique_points_set.add(point_tuple)
+            points_weights_dict[point_tuple] = 1
+        else:
+            points_weights_dict[point_tuple] += 1
+    return unique_points_set, points_weights_dict
