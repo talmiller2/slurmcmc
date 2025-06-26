@@ -76,7 +76,7 @@ slurm_pool = status['slurm_pool']
 print("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler.acceptance_fraction)))
 
 tau = sampler.get_autocorr_time(quiet=True)
-print("Autocorrelation time (tau) per paramter:", [np.round(t, 2) for t in tau])
+print("Autocorrelation time (tau) per parameter:", [np.round(t, 2) for t in tau])
 
 thin = 1
 # burnin = 0
@@ -90,28 +90,36 @@ samples = sampler.get_chain(discard=burnin, thin=thin)
 samples_flat = sampler.get_chain(discard=burnin, thin=thin, flat=True)
 
 ## fitting a surrogate model and rerunning mcmc
-num_iters_for_training = 500
 kernel = ConstantKernel(1.0, (1e-3, 1e3)) * RBF(1.0, (1e-2, 1e2))
 surrogate = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10, alpha=1e-6)
 
 # assemble training data
 # combine mcmc points and some "random" points for regularization in far away regions
-num_iters_for_training_mcmc = int(0.5 * num_iters_for_training)
 X_train, y_train = [], []
+num_train_points_from_mcmc = 400
+unique_points_set = set()  # use to avoid duplicate points
 for point, value in zip(slurm_pool.points_history, slurm_pool.values_history):
-    if tuple(point) in sampler.mcmc_points_set:
+    point_accepted = tuple(point) not in unique_points_set
+    if use_constraints:
+        if constraint_fun(point) > 0: point_accepted = False
+    if point_accepted:
+        unique_points_set.add(tuple(point))
         X_train += [point]
         y_train += [value]
-    if len(y_train) == num_iters_for_training_mcmc:
+    if len(y_train) >= num_train_points_from_mcmc:
         break
 
+num_train_points_regularization = 200
 while True:
     point = np.array([param_bounds[i][0] + (param_bounds[i][1] - param_bounds[i][0]) * np.random.rand()
                       for i in range(num_params)])
-    if constraint_fun(point) < 0:
+    point_accepted = True
+    if use_constraints:
+        if constraint_fun(point) > 0: point_accepted = False
+    if point_accepted:
         X_train += [point]
         y_train += [np.array([log_prob_rosen_with_constraint(point)])]
-        if len(y_train) == num_iters_for_training:
+        if len(y_train) >= num_train_points_from_mcmc + num_train_points_regularization:
             break
 
 X_train, y_train = np.array(X_train), np.array(y_train)
@@ -129,11 +137,16 @@ log_prob_fun_surrogate = lambda x: surrogate.predict(x.reshape(1, -1))[0]  # for
 num_points_test = 100
 X_test, y_test = [], []
 for point, value in zip(slurm_pool.points_history, slurm_pool.values_history):
-    if tuple(point) in sampler.mcmc_points_set and point not in X_train:
+    point_accepted = tuple(point) not in unique_points_set
+    if use_constraints:
+        if constraint_fun(point) > 0: point_accepted = False
+    if point_accepted:
+        unique_points_set.add(tuple(point))
         X_test += [point]
         y_test += [value]
     if len(y_test) == num_points_test:
         break
+
 X_test, y_test = np.array(X_test), np.array(y_test)
 y_test_surrogate = np.array([log_prob_fun_surrogate(point) for point in X_test])
 dy_test = y_test_surrogate - y_test[:, 0]
@@ -156,7 +169,7 @@ else:
 
 print('running mcmc with surrogate.')
 status_2 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                       cluster='local-map', verbosity=0)
+                      cluster='local-map', verbosity=0)
 sampler_2 = status_2['sampler']
 print("Mean acceptance fraction: {0:.3f}".format(np.mean(sampler_2.acceptance_fraction)))
 
@@ -250,21 +263,22 @@ importance_mean = np.mean(importance_weights_list)
 importance_std = np.std(importance_weights_list)
 print('importance_weights mean', importance_mean, ', std=', importance_std)
 
-plt.figure(figsize=(5, 8))
-plt.subplot(2, 1, 1)
-hist_range = (importance_mean - 3 * importance_std, importance_mean + 3 * importance_std)
-plt.hist(importance_weights_list, color='b', bins=20, range=hist_range)
+plt.figure()
+hist_range = (importance_mean - 2 * importance_std, importance_mean + 2 * importance_std)
+plt.hist(importance_weights_list, color='b', bins=31, range=hist_range)
 plt.title('mean=' + '{:.3f}'.format(importance_mean) + ', std=' + '{:.3f}'.format(importance_std))
-plt.gca().set_xticklabels([])
-plt.gca().set_yticklabels([])
-
-plt.subplot(2, 1, 2)
-plt.scatter(importance_weights_list, log_prob_expensive_list, color='b', alpha=0.3)
-plt.xlabel('importance weights')
-plt.ylabel('log probability (expensive)')
+plt.xlabel('importance weights = $p_{\mathrm{expensive}} / p_{\mathrm{surrogate}}$')
 plt.xlim([hist_range[0], hist_range[1]])
-
+plt.ylabel('frequency')
 plt.tight_layout()
 
 if save_plots:
     plt.savefig('example_mcmc_surrogate_importance_weights')
+
+plt.figure()
+plt.hist(log_prob_expensive_list, bins=31, label='expensive', color='k', alpha=0.5)
+plt.hist(log_prob_surrogate_list, bins=31, label='surrogate', color='b', alpha=0.5)
+plt.xlabel('log-probabillity')
+plt.ylabel('frequency')
+plt.legend()
+plt.tight_layout()
