@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+import time
 
 import numpy as np
 import submitit
@@ -22,7 +23,8 @@ class SlurmPool():
     def __init__(self, work_dir='slurmpool', job_name='slurmpool', cluster='slurm',
                  verbosity=1, log_file=None, extra_arg=None, submitit_kwargs=None,
                  dim_input=None, dim_output=None,
-                 budget=int(1e6), job_fail_value=np.nan):
+                 budget=int(1e6), job_fail_value=np.nan,
+                 submit_max_attempts=5, submit_retry_wait_seconds=10):
         if not isinstance(dim_input, int) and not dim_input > 0:
             raise ValueError('dim_input must be a positive integer. dim_input=', dim_input)
         self.dim_input = dim_input
@@ -50,6 +52,8 @@ class SlurmPool():
         if 'timeout_min' not in submitit_kwargs:
             submitit_kwargs['timeout_min'] = int(60 * 24 * 30)  # 1 month
         self.submitit_kwargs = submitit_kwargs
+        self.submit_max_attempts = submit_max_attempts
+        self.submit_retry_wait_seconds = submit_retry_wait_seconds
         self.budget = budget
         self.job_fail_value = job_fail_value
         set_logging(self.work_dir, self.log_file)
@@ -94,6 +98,19 @@ class SlurmPool():
     def _combine_args(self, point):
         return combine_args(point, self.extra_arg)
 
+    def submit_with_retry(self, fun, point):
+        attempts = 0
+        while attempts < self.submit_max_attempts:
+            try:
+                job = self.executor.submit(fun, *self._combine_args(point))
+                return job
+            except Exception as e:
+                attempts += 1
+                print(f"Submission failed: {e}. Retrying {attempts}/{self.submit_max_attempts}")
+                time.sleep(self.submit_retry_wait_seconds)  # wait before retrying
+            if attempts == self.submit_max_attempts:
+                raise Exception("Max submit retry attempts reached")
+
     def map_chunk(self, fun, points):
         if self.verbosity >= 1:
             logging.info('slurm_pool.map called with ' + str(len(points)) + ' points.')
@@ -127,19 +144,6 @@ class SlurmPool():
         self.num_calls += 1
 
         # update history arrays
-        # inds_failed = [i for i, r in enumerate(res) if self.check_failed(r)]
-        # inds_success = [i for i, r in enumerate(res) if i not in inds_failed]
-        # failed_points = np.array([p for i, p in enumerate(points) if i in inds_failed])
-        # success_points = np.array([p for i, p in enumerate(points) if i in inds_success])
-        # success_values = np.array([v for i, v in enumerate(res) if i in inds_success])
-        # success_values = success_values.reshape(-1, 1)  # switch to column array
-        # if len(inds_failed) > 0:
-        #     self.failed_points_history = self.add_to_history(self.failed_points_history, failed_points, dim=self.dim_input)
-        # if len(inds_success) > 0:
-        #     self.points_history = self.add_to_history(self.points_history, success_points, dim=self.dim_input)
-        #     self.values_history = self.add_to_history(self.values_history, success_values, dim=self.dim_output)
-
-
         inds_failed = [self.num_evaluated_points + i for i, v in enumerate(res) if self.check_failed(v)]
         inds_success = [self.num_evaluated_points + i for i, v in enumerate(res) if not self.check_failed(v)]
         self.inds_failed_points += inds_failed
@@ -205,7 +209,7 @@ class SlurmPool():
             self.executor = submitit.AutoExecutor(folder=point_dir, cluster=self.cluster)
             self.executor.update_parameters(**self.submitit_kwargs)
             os.chdir(point_dir)  # each point evaluation (query) is born in its own dir
-            job = self.executor.submit(fun, *self._combine_args(point))
+            job = self.submit_with_retry(fun, point)
             jobs += [job]
 
         # collect the results
