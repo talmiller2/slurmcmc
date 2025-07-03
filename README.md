@@ -20,7 +20,7 @@ pip install submitit nevergrad botorch emcee corner
 
 Install the package locally using
 ```
-pip install -e .
+python setup.py install --user
 ```
 
 Run tests from root project folder using:
