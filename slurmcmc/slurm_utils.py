@@ -24,7 +24,7 @@ class SlurmPool():
                  verbosity=1, log_file=None, extra_arg=None, submitit_kwargs=None,
                  dim_input=None, dim_output=None,
                  budget=int(1e6), job_fail_value=np.nan,
-                 submit_max_attempts=5, submit_retry_wait_seconds=10):
+                 submit_retry_max_attempts=5, submit_retry_wait_seconds=10):
         if not isinstance(dim_input, int) and not dim_input > 0:
             err_msg = f'dim_input must be a positive integer. dim_input={dim_input}'
             logging.error(err_msg)
@@ -56,7 +56,7 @@ class SlurmPool():
         if 'timeout_min' not in submitit_kwargs:
             submitit_kwargs['timeout_min'] = int(60 * 24 * 30)  # 1 month
         self.submitit_kwargs = submitit_kwargs
-        self.submit_max_attempts = submit_max_attempts
+        self.submit_retry_max_attempts = submit_retry_max_attempts
         self.submit_retry_wait_seconds = submit_retry_wait_seconds
         self.budget = budget
         self.job_fail_value = job_fail_value
@@ -104,16 +104,18 @@ class SlurmPool():
 
     def submit_with_retry(self, fun, point):
         attempts = 0
-        while attempts < self.submit_max_attempts:
+        while attempts < self.submit_retry_max_attempts:
             try:
                 job = self.executor.submit(fun, *self._combine_args(point))
                 return job
             except Exception as e:
                 attempts += 1
-                print(f"Submission failed: {e}. Retrying {attempts}/{self.submit_max_attempts}")
+                logging.info(f"Submission failed: {e}. Retrying {attempts}/{self.submit_retry_max_attempts}")
                 time.sleep(self.submit_retry_wait_seconds)  # wait before retrying
-            if attempts == self.submit_max_attempts:
-                raise Exception("Max submit retry attempts reached")
+            if attempts == self.submit_retry_max_attempts:
+                err_msg = "max submit retry attempts reached."
+                logging.error(err_msg)
+                raise Exception(err_msg)
 
     def map_chunk(self, fun, points):
         if self.verbosity >= 1:
