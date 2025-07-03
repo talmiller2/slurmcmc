@@ -24,7 +24,7 @@ class SlurmPool():
                  verbosity=1, log_file=None, extra_arg=None, submitit_kwargs=None,
                  dim_input=None, dim_output=None,
                  budget=int(1e6), job_fail_value=np.nan,
-                 submit_retry_max_attempts=5, submit_retry_wait_seconds=10):
+                 submit_retry_max_attempts=5, submit_retry_wait_seconds=10, submit_delay_seconds=0.1):
         if not isinstance(dim_input, int) and not dim_input > 0:
             err_msg = f'dim_input must be a positive integer. dim_input={dim_input}'
             logging.error(err_msg)
@@ -56,10 +56,11 @@ class SlurmPool():
         if 'timeout_min' not in submitit_kwargs:
             submitit_kwargs['timeout_min'] = int(60 * 24 * 30)  # 1 month
         self.submitit_kwargs = submitit_kwargs
-        self.submit_retry_max_attempts = submit_retry_max_attempts
-        self.submit_retry_wait_seconds = submit_retry_wait_seconds
         self.budget = budget
         self.job_fail_value = job_fail_value
+        self.submit_retry_max_attempts = submit_retry_max_attempts
+        self.submit_retry_wait_seconds = submit_retry_wait_seconds
+        self.submit_delay_seconds = submit_delay_seconds
         set_logging(self.work_dir, self.log_file)
 
         if cluster in ['local', 'slurm']:
@@ -221,6 +222,8 @@ class SlurmPool():
             os.chdir(point_dir)  # each point evaluation (query) is born in its own dir
             job = self.submit_with_retry(fun, point)
             jobs += [job]
+            if self.submit_delay_seconds > 0:
+                time.sleep(self.submit_delay_seconds)
 
         # collect the results
         outputs = []

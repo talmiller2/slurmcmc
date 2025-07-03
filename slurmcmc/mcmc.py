@@ -16,7 +16,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
                save_restart=False, load_restart=False, restart_file='mcmc_restart.pkl',
                work_dir='mcmc', job_name='mcmc', cluster='slurm', submitit_kwargs=None, emcee_kwargs=None,
                budget=int(1e6), job_fail_value=-1e10,
-               submit_retry_max_attempts=5, submit_retry_wait_seconds=10,
+               submit_retry_max_attempts=5, submit_retry_wait_seconds=10, submit_delay_seconds=0.1,
 
                # remote run params:
                remote=False, remote_cluster='slurm', remote_submitit_kwargs=None,
@@ -67,6 +67,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
                                    budget=budget, job_fail_value=job_fail_value,
                                    submit_retry_max_attempts=submit_retry_max_attempts,
                                    submit_retry_wait_seconds=submit_retry_wait_seconds,
+                                   submit_delay_seconds=submit_delay_seconds,
                                    )
 
             # save the extra_arg in the work folder to document the full input used
