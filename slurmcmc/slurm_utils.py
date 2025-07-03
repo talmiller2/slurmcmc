@@ -26,10 +26,14 @@ class SlurmPool():
                  budget=int(1e6), job_fail_value=np.nan,
                  submit_max_attempts=5, submit_retry_wait_seconds=10):
         if not isinstance(dim_input, int) and not dim_input > 0:
-            raise ValueError('dim_input must be a positive integer. dim_input=', dim_input)
+            err_msg = f'dim_input must be a positive integer. dim_input={dim_input}'
+            logging.error(err_msg)
+            raise ValueError(err_msg)
         self.dim_input = dim_input
         if not isinstance(dim_output, int) and not dim_output > 0:
-            raise ValueError('dim_output must be a positive integer. dim_output=', dim_output)
+            err_msg = f'dim_output must be a positive integer. dim_output={dim_output}'
+            logging.error(err_msg)
+            raise ValueError(err_msg)
         self.dim_output = dim_output
         self.num_calls = 0  # initialize counter
         self.num_evaluated_points = 0  # initialize counter
@@ -61,9 +65,9 @@ class SlurmPool():
         if cluster in ['local', 'slurm']:
             os.makedirs(work_dir, exist_ok=True)
             if len(list_directories(work_dir)) > 0:
-                error_msg = 'work_dir appears to already contain runs, move or delete it first.'
-                error_msg += '\n' + 'work_dir:' + work_dir
-                raise ValueError(error_msg)
+                err_msg = 'work_dir appears to already contain runs, move or delete it first.'
+                err_msg += '\n' + f'work_dir: {work_dir}'
+                raise ValueError(err_msg)
                 # note: in case of continuing from restart, SlurmPool is loaded and not initialized so will not error.
 
         # capability to call the function with additional argument that is constant during the map
@@ -119,8 +123,10 @@ class SlurmPool():
         for point in points:
             dim_curr_input = calc_dimension(point)
             if dim_curr_input != self.dim_input:
-                raise ValueError('inconsistent dimensions. expecting dim_input=', self.dim_input,
-                                 'but dim_curr_input=', dim_curr_input)
+                err_msg = (f'inconsistent dimensions. expecting dim_input={self.dim_input} '
+                           f'but dim_curr_input={dim_curr_input}')
+                logging.error(err_msg)
+                raise ValueError(err_msg)
 
         # calculate fun on the points
         if self.cluster == 'local-map':
@@ -132,8 +138,10 @@ class SlurmPool():
         for output in res:
             dim_curr_output = calc_dimension(output)
             if dim_curr_output != self.dim_output:
-                raise ValueError('inconsistent dimensions. expecting dim_output=', self.dim_output,
-                                 'but dim_curr_output=', dim_curr_output)
+                err_msg = (f'inconsistent dimensions. expecting dim_output={self.dim_output} '
+                           f'but dim_curr_output={dim_curr_output}')
+                logging.error(err_msg)
+                raise ValueError(err_msg)
 
         # track if point was previously evaluated
         for point in points:

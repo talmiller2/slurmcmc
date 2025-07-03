@@ -99,7 +99,9 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                 optimizer = optimizer_class(lower_bounds, upper_bounds, num_workers, **botorch_kwargs)
 
             else:
-                raise ValueError('invalid optimizer_package:', optimizer_package)
+                err_msg = f'invalid optimizer_package: {optimizer_package}'
+                logging.error(err_msg)
+                raise ValueError(err_msg)
 
             slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, log_file=log_file,
                                    extra_arg=extra_arg, submitit_kwargs=submitit_kwargs,
@@ -138,7 +140,9 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                         constraint_passed = constraint_fun(*combine_args(candidate, extra_arg)) <= 0
                         num_constraint_fun_calls_total += 1
                         if not constraint_passed:
-                            raise ValueError('init point index ' + str(ind_candidate) + ' does not satisfy constraint.')
+                            err_msg = f'init point index {ind_candidate} does not satisfy constraint.'
+                            logging.error(err_msg)
+                            raise ValueError(err_msg)
 
             else:
                 candidates = []
@@ -157,12 +161,15 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                         candidates_batch = optimizer.ask(x_pts, y_pts)
                         t_end_ask = time.time()
                         if verbosity >= 3:
-                            logging.info('    botorch ask run time: ' + '{:.1f}'.format(t_end_ask - t_start_ask) + 's.')
+                            logging.info(f'    botorch ask run time: {(t_end_ask - t_start_ask):.1f}s.')
 
                     num_asks += 1
                     if num_asks > num_asks_max:
-                        raise ValueError('num_asks exceeded num_asks_max=', num_asks_max,
-                                         ', having trouble finding candidates that pass constraints.')
+                        err_msg = (f'num_asks exceeded num_asks_max= {num_asks_max}'
+                                   f', having trouble finding candidates that pass constraints.')
+                        logging.error(err_msg)
+                        raise ValueError(err_msg)
+
 
                     for candidate in candidates_batch:
                         candidate_tuple = point_to_tuple(candidate)
@@ -215,9 +222,9 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
             loc_point_min_per_iter += [curr_iter_loc_point_min]
 
             if verbosity >= 2:
-                logging.info('    curr loss_min: ' + str(loss_min) + ', curr x_min: ' + str(x_min))
+                logging.info(f'    curr loss_min: {loss_min}, curr x_min: {x_min}')
             elif verbosity >= 1:
-                logging.info('    curr loss_min: ' + str(loss_min))
+                logging.info(f'    curr loss_min: {loss_min}')
 
             # optimization status
             status = {}
@@ -244,6 +251,6 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                 save_restart_file(status, work_dir, restart_file)
 
         if verbosity >= 1:
-            logging.info('### opt loop done. x_min: ' + str(x_min) + ', loss_min: ' + str(loss_min))
+            logging.info(f'### opt loop done. x_min: {x_min}, loss_min: {loss_min}')
 
         return status

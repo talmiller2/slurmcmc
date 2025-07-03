@@ -62,8 +62,9 @@ def load_restart_file(work_dir, restart_file):
             status = pickle.load(f)
         return status
     else:
-        raise ValueError('restart_file does not exists. restart_file_path=', restart_file_path)
-    return status
+        err_msg = f'restart_file does not exists. restart_file_path={restart_file_path}'
+        logging.error(err_msg)
+        raise ValueError(err_msg)
 
 
 def combine_args(arg, extra_arg=None):
@@ -101,4 +102,6 @@ def calc_dimension(point):
     elif isinstance(point, (list, np.ndarray)):
         return len(point)
     else:
-        raise TypeError("Unsupported type for point=", point)
+        err_msg = f"Unsupported type for point={point}"
+        logging.error(err_msg)
+        raise TypeError(err_msg)

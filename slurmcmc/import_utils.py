@@ -1,4 +1,5 @@
 import importlib
+import logging
 import os
 import sys
 
@@ -8,7 +9,9 @@ def import_function_from_module(module_dir, module_name, function_name):
     import a function defined in a python file in a remote directory.
     """
     if not os.path.isdir(module_dir):
-        raise ValueError(f'Directory {module_dir} does not exist.')
+        err_msg = f'Directory {module_dir} does not exist.'
+        logging.error(err_msg)
+        raise ValueError(err_msg)
     sys.path.insert(0, module_dir)
 
     try:
@@ -54,18 +57,26 @@ def deferred_import_function_wrapper(fun):
         if 'module_dir' in fun.keys():
             module_dir = fun['module_dir']
         else:
-            raise ValueError('input is a dict, but does not contain module_dir key.')
+            err_msg = 'input is a dict, but does not contain module_dir key.'
+            logging.error(err_msg)
+            raise ValueError(err_msg)
         if 'module_name' in fun.keys():
             module_name = fun['module_name']
         else:
-            raise ValueError('input is a dict, but does not contain module_name key.')
+            err_msg = 'input is a dict, but does not contain module_name key.'
+            logging.error(err_msg)
+            raise ValueError(err_msg)
         if 'function_name' in fun.keys():
             function_name = fun['function_name']
         else:
-            raise ValueError('input is a dict, but does not contain function_name key.')
+            err_msg = 'input is a dict, but does not contain function_name key.'
+            logging.error(err_msg)
+            raise ValueError(err_msg)
 
         # Return a deferred function object instead of importing immediately
         deferred_import_function = DeferredImportFunction(module_dir, module_name, function_name)
         return deferred_import_function
     else:
-        raise ValueError('input should be function or dictionary, type(fun)=', type(fun))
+        err_msg = f'input should be function or dictionary, type(fun)={type(fun)}'
+        logging.error(err_msg)
+        raise ValueError(err_msg)
