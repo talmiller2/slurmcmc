@@ -16,6 +16,8 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
                save_restart=False, load_restart=False, restart_file='mcmc_restart.pkl',
                work_dir='mcmc', job_name='mcmc', cluster='slurm', submitit_kwargs=None, emcee_kwargs=None,
                budget=int(1e6), job_fail_value=-1e10,
+               submit_retry_max_attempts=5, submit_retry_wait_seconds=10,
+
                # remote run params:
                remote=False, remote_cluster='slurm', remote_submitit_kwargs=None,
                ):
@@ -62,7 +64,10 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
             # using extra_arg=None because emcee deals with extra_arg internally by wrapping the function
             slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, extra_arg=extra_arg,
                                    submitit_kwargs=submitit_kwargs, dim_input=init_points.shape[1], dim_output=1,
-                                   budget=budget, job_fail_value=job_fail_value)
+                                   budget=budget, job_fail_value=job_fail_value,
+                                   submit_retry_max_attempts=submit_retry_max_attempts,
+                                   submit_retry_wait_seconds=submit_retry_wait_seconds,
+                                   )
 
             # save the extra_arg in the work folder to document the full input used
             if cluster != 'local-map':
