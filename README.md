@@ -18,8 +18,9 @@ Install prerequisites:
 pip install submitit nevergrad botorch emcee corner
 ```
 
-Install the package locally using
+Install the package locally using either
 ```
+pip install --user .
 python setup.py install --user
 ```
 
