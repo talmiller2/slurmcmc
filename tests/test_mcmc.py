@@ -104,7 +104,7 @@ def log_prob_fun_global(x):
     return -rosen(x)
 
 
-def test_slurm_mcmc_with_restart(work_dir, verbosity, seed):
+def test_slurm_mcmc_with_restart_file(work_dir, verbosity, seed):
     num_params = 2
     num_walkers = 10
     num_iters = 3
@@ -140,6 +140,40 @@ def test_slurm_mcmc_with_restart(work_dir, verbosity, seed):
     assert len(status_2['slurm_pool'].points_history) == total_num_points_calc
     restart_2 = load_restart_file(work_dir, restart_file='mcmc_restart.pkl')
     assert restart_2['ini_iter'] == 2 * num_iters
+
+
+def test_slurm_mcmc_with_status_restart(work_dir, verbosity, seed):
+    num_params = 2
+    num_walkers = 10
+    num_iters = 3
+
+    num_slurm_call_init = 1
+    num_slurm_call_mcmc = 2 * num_iters
+    num_points_calc_init = num_walkers
+    num_points_calc_mcmc = num_walkers * num_iters
+
+    minima = np.array([1, 1])
+    init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
+
+    status_1 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
+                          verbosity=verbosity, slurm_vebosity=verbosity,
+                          cluster='local-map',
+                          work_dir=work_dir)
+
+    total_num_slurm_call = num_slurm_call_init + num_slurm_call_mcmc
+    total_num_points_calc = num_points_calc_init + num_points_calc_mcmc
+    assert status_1['slurm_pool'].num_calls == total_num_slurm_call
+    assert len(status_1['slurm_pool'].points_history) == total_num_points_calc
+
+    status_2 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
+                          verbosity=verbosity, slurm_vebosity=verbosity,
+                          cluster='local-map',
+                          work_dir=work_dir, status_restart=status_1)
+
+    total_num_slurm_call = num_slurm_call_init + 2 * num_slurm_call_mcmc
+    total_num_points_calc = num_points_calc_init + 2 * num_points_calc_mcmc
+    assert status_2['slurm_pool'].num_calls == total_num_slurm_call
+    assert len(status_2['slurm_pool'].points_history) == total_num_points_calc
 
 
 def test_slurm_mcmc_init_log_prob_fun_values(verbosity, seed):

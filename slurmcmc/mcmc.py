@@ -13,7 +13,7 @@ from slurmcmc.slurm_utils import SlurmPool
 
 def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values=None,
                progress=False, verbosity=1, slurm_vebosity=0, log_file=None, extra_arg=None,
-               save_restart=False, load_restart=False, restart_file='mcmc_restart.pkl',
+               save_restart=False, load_restart=False, restart_file='mcmc_restart.pkl', status_restart=None,
                work_dir='mcmc', job_name='mcmc', cluster='slurm', submitit_kwargs=None, emcee_kwargs=None,
                budget=int(1e6), job_fail_value=-1e10,
                submit_retry_max_attempts=5, submit_retry_wait_seconds=10, submit_delay_seconds=0.1,
@@ -51,15 +51,19 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
 
         log_prob_fun = deferred_import_function_wrapper(log_prob_fun)
 
-        if load_restart:
-            if verbosity >= 1:
-                logging.info('loading restart file: ' + work_dir + '/' + restart_file)
-
+        if load_restart == True or status_restart is not None:
+            if status_restart is not None:
+                if verbosity >= 1:
+                    logging.info('restarting from status_restart argument.')
+                status = status_restart
+            else:
+                if verbosity >= 1:
+                    logging.info('loading restart file: ' + work_dir + '/' + restart_file)
                 status = load_restart_file(work_dir, restart_file)
-                sampler = status['sampler']
-                slurm_pool = status['slurm_pool']
-                sampler.pool = slurm_pool
-                ini_iter = status['ini_iter']
+            sampler = status['sampler']
+            slurm_pool = status['slurm_pool']
+            sampler.pool = slurm_pool
+            ini_iter = status['ini_iter']
         else:
             # using extra_arg=None because emcee deals with extra_arg internally by wrapping the function
             slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, extra_arg=extra_arg,
