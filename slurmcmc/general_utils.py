@@ -3,6 +3,7 @@ import logging
 import os
 import pickle
 import shutil
+import sys
 
 import numpy as np
 
@@ -105,3 +106,7 @@ def calc_dimension(point):
         err_msg = f"Unsupported type for point={point}"
         logging.error(err_msg)
         raise TypeError(err_msg)
+
+def signal_handler(sig, frame):
+    logging.info(f"Received signal {sig}, shutting down gracefully...")
+    sys.exit(0)  # Exit the program cleanly

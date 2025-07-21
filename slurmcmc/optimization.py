@@ -1,5 +1,6 @@
 import functools
 import logging
+import signal
 import time
 
 import nevergrad as ng
@@ -7,7 +8,8 @@ import numpy as np
 import submitit
 
 from slurmcmc.botorch_optimizer import BoTorchOptimizer
-from slurmcmc.general_utils import set_logging, save_restart_file, load_restart_file, combine_args, point_to_tuple
+from slurmcmc.general_utils import set_logging, save_restart_file, load_restart_file, combine_args, point_to_tuple, \
+    signal_handler
 from slurmcmc.import_utils import deferred_import_function_wrapper
 from slurmcmc.slurm_utils import SlurmPool
 
@@ -30,9 +32,11 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
     already calculated previously, and that pass constraint_fun. This prevents wasting compute on irrelevant points.
     """
     set_logging(work_dir, log_file)
+    signal.signal(signal.SIGTERM, signal_handler)  # force termination when canceling job on Slurm via scancel
 
     if remote == True:
         print('Running slurm_minimize remotely.')
+
         if remote_submitit_kwargs is None:
             remote_submitit_kwargs = {}
         if 'slurm_job_name' not in remote_submitit_kwargs:

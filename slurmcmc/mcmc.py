@@ -1,12 +1,13 @@
 import functools
 import logging
+import signal
 
 import emcee
 import numpy as np
 import submitit
 
 from slurmcmc.general_utils import (set_logging, save_restart_file, load_restart_file, save_extra_arg_to_file,
-                                    point_to_tuple)
+                                    point_to_tuple, signal_handler)
 from slurmcmc.import_utils import deferred_import_function_wrapper
 from slurmcmc.slurm_utils import SlurmPool
 
@@ -27,6 +28,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
     except the first one on the init_points which is len(init_points).
     """
     set_logging(work_dir, log_file)
+    signal.signal(signal.SIGTERM, signal_handler)  # force termination when canceling job on Slurm via scancel
 
     if remote == True:
         print('Running slurm_mcmc remotely.')
