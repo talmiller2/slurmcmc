@@ -61,5 +61,6 @@ The final product of the Bayesian analysis is a [``corner``](https://github.com/
 <img src="pics/example_mcmc_parameters_distribution.png" alt="example_mcmc_parameters_distribution" width="700" height="auto">
 
 A convergence test of the parameters distributions, assuming the MCMC is stopped at 5 different points along the chains (progression in colors going from purple to red):
+
 <img src="pics/example_mcmc_parameters_distribution_convergence.png" alt="example_mcmc_parameters_distribution_convergence" width="700" height="auto">
 
