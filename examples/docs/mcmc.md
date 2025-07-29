@@ -53,15 +53,13 @@ and the histogram of the values accepted to the MCMC samples set (red).
 
 <img src="pics/example_mcmc_log_probability_values_explore.png" alt="example_mcmc_log_probability_values_explore" width="1200" height="auto">
 
-The histogram can be compared with the one generated from a normal iid distribution in 2 dimensions (blue).
-The medians of both distributions are numerically calculated and written in the legend. 
-For the normal distribution the median can also be calculated with the built-in function `scipy.stats.chi2.ppf(0.5, 2)`.
-In our chosen example of the log-probability function the median value is lower than for the normal distribution due to the correlation between parameters.
+The histogram can be compared with the one generated from a $\chi^2$ distribution in 2 dimensions (blue).
+The means of both distributions are numerically calculated and written in the legend (the analytic value for the mean of the $\chi^2$ distribution should be the dimension). 
 
 The final product of the Bayesian analysis is a [``corner``](https://github.com/dfm/corner.py) plot of the parameters distribution:
 
 <img src="pics/example_mcmc_parameters_distribution.png" alt="example_mcmc_parameters_distribution" width="700" height="auto">
 
-A convergence test of the parameters distributions, assuming the MCMC is stopped at 4 different points along the chains:
+A convergence test of the parameters distributions, assuming the MCMC is stopped at 5 different points along the chains (progression in colors going from purple to red):
 <img src="pics/example_mcmc_parameters_distribution_convergence.png" alt="example_mcmc_parameters_distribution_convergence" width="700" height="auto">
 

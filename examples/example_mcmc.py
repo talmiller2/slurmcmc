@@ -2,7 +2,6 @@ import corner
 import emcee
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy
 from matplotlib.pyplot import cm
 from scipy.optimize import rosen
 
@@ -14,8 +13,8 @@ plt.close('all')
 plt.interactive(True)
 plt.rcParams.update({'font.size': 12})
 
-save_plots = False
-# save_plots = True
+# save_plots = False
+save_plots = True
 
 np.random.seed(0)
 
@@ -60,7 +59,7 @@ init_points = (np.array([[x0_constraint, y0_constraint] for _ in range(num_walke
 # log_prob_fun = log_prob
 log_prob_fun = log_prob_with_constraint
 status = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                    cluster='local-map', verbosity=0)
+                    cluster='local-map', verbosity=1)
 sampler = status['sampler']
 slurm_pool = status['slurm_pool']
 
@@ -130,7 +129,7 @@ plt.ylim(param_bounds[1])
 plt.colorbar()
 plt.xlabel(param_labels[0])
 plt.ylabel(param_labels[1])
-plt.title('log probability function: rosenbrock')
+plt.title('log-probability function')
 
 # plot points sampled during mcmc
 plt.scatter(slurm_pool.points_history[:, 0], slurm_pool.points_history[:, 1], c='k', marker='o', s=10, alpha=0.1)
@@ -150,17 +149,6 @@ plt.tight_layout()
 
 if save_plots:
     plt.savefig('example_mcmc_2d_visualization')
-
-# corner plot of mcmc samples
-fig = plt.figure(figsize=(7, 7))
-bins = 50
-corner.corner(samples_flat, labels=param_labels, color='k', truths=minima, truth_color='r', fig=fig, labelpad=-0.1,
-              bins=bins)
-plt.suptitle('mcmc parameters distribution')
-plt.tight_layout()
-
-if save_plots:
-    plt.savefig('example_mcmc_parameters_distribution')
 
 # plot metrics for mcmc convergence
 metrics = ['tau', 'tau_multiples', 'ESS', 'GR']
@@ -210,10 +198,10 @@ for ind_point, point in enumerate(slurm_pool.points_history):
 
 fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(12, 5))
 ax = axs[0]
-num_samples_array = list(range(len(all_values_history)))
-ax.plot(num_samples_array, all_values_history, '.k', linewidth=1, alpha=0.1, label='all samples')
-ax.plot(num_samples_array, mcmc_values_history, '.r', linewidth=1, alpha=0.1, label='mcmc samples')
-ax.set_xlabel('# samples')
+num_iters_array = np.linspace(-0.5, num_iters, all_values_history.shape[0])
+ax.plot(num_iters_array, all_values_history, '.k', linewidth=1, alpha=0.1, label='all samples')
+ax.plot(num_iters_array, mcmc_values_history, '.r', linewidth=1, alpha=0.1, label='mcmc samples')
+ax.set_xlabel('# iter')
 ax.set_ylabel('$\\chi^2$')
 ax.set_yscale('log')
 ax.legend()
@@ -224,20 +212,12 @@ hist_range = (0, 4 * num_params)
 ax.hist(all_values_history, range=hist_range, bins=bins, color='k', alpha=0.5, density=True,
         label='all samples')
 ax.hist(mcmc_values_history, range=hist_range, bins=bins, color='r', alpha=0.5, density=True,
-        label=f'mcmc samples median={np.nanpercentile(mcmc_values_history, 50):.1f}')
+        label=f'mcmc samples mean={np.nanmean(mcmc_values_history):.1f}')
 
-# plot the values for a reference normal distribution
-normal_num_params = 2
-mean = np.ones(normal_num_params)
-cov = np.eye(normal_num_params)
-normal_points = np.random.multivariate_normal(mean, cov, len(mcmc_values_history))
-diff = normal_points - mean
-cov_inv = np.linalg.inv(cov)
-cov_inv_diff = np.matmul(diff, cov_inv)
-samples_normal_MC = np.sum(diff * cov_inv_diff, axis=1)
-ax.hist(samples_normal_MC, range=hist_range, bins=bins, color='b', alpha=0.2, density=True,
-        label=f'normal d={normal_num_params} median={np.nanpercentile(samples_normal_MC, 50):.1f}')
-print(f'scipy.stats.chi2.ppf(0.5,{normal_num_params})={scipy.stats.chi2.ppf(0.5, num_params)}.')
+# plot the values for a reference chi^2 distribution (sum of normal distributions squared)
+samples_chi2 = np.random.chisquare(num_params, len(mcmc_values_history))
+ax.hist(samples_chi2, range=hist_range, bins=bins, color='b', alpha=0.2, density=True,
+        label=f'$\\chi^2(d={num_params})$ samples mean={np.nanmean(samples_chi2):.1f}')
 
 ax.set_xlabel('$\\chi^2$')
 ax.set_yticks([])
@@ -250,21 +230,54 @@ fig.tight_layout()
 if save_plots:
     plt.savefig('example_mcmc_log_probability_values_explore')
 
+# plot of % of points that did not pass constraint per iterations
+iters_list = list(range(num_iters))
+failed_constraint_percentage_list = []
+for ind_iter in range(num_iters):
+    if ind_iter == 0:
+        ind_ini, ind_fin = 0, 2 * num_walkers
+    else:
+        ind_ini = ind_fin
+        ind_fin += num_walkers
+    num_failed = np.sum(all_values_history[ind_ini:ind_fin] > 1e7)
+    failed_constraint_percentage_list += [100.0 * num_failed / (ind_fin - ind_ini)]
+plt.figure(figsize=(6, 5))
+plt.plot(iters_list, failed_constraint_percentage_list, 'ob')
+plt.xlabel('# iter')
+plt.ylabel('%')
+plt.grid(True)
+plt.title('% points per iteration that did not pass constraints')
+plt.tight_layout()
+
+# corner plot of mcmc samples
+fig = plt.figure(figsize=(7, 7))
+bins = 50
+corner.corner(samples_flat, color='k', truths=minima, truth_color='r', fig=fig, bins=bins)
+axes = np.array(fig.axes).reshape((num_params, num_params))
+for i in range(num_params):
+    axes[i, i].set_title(param_labels[i], pad=10)
+plt.suptitle('mcmc parameters distribution')
+plt.tight_layout()
+
+if save_plots:
+    plt.savefig('example_mcmc_parameters_distribution')
+
 # plot the parameter distributions for different iterations, to see how the distrbutions converge.
 fig = plt.figure(figsize=(7, 7))
-num_splits = 4
+num_splits = 5
 num_iters_interval = int(samples.shape[0] / num_splits)
-nun_iters_list = np.arange(num_iters_interval, samples.shape[0], num_iters_interval)
+max_iters_list = np.arange(num_iters_interval, samples.shape[0] + 1, num_iters_interval)
 color_list = cm.rainbow(np.linspace(0, 1, num_splits))
-bins = 20
 num_subsamples = int(samples_flat.shape[0] / num_splits)
-for ind_n, n in enumerate(nun_iters_list):
+for ind_n, n in enumerate(max_iters_list):
     samples_flat_subset = samples[:n].reshape(-1, samples.shape[-1])
     random_indices = np.random.permutation(samples_flat_subset.shape[0])[0:num_subsamples]
     samples_flat_subset = samples_flat_subset[random_indices, :]
-    corner.corner(samples_flat_subset, labels=None, color=color_list[ind_n], fig=fig, bins=bins,
+    corner.corner(samples_flat_subset, color=color_list[ind_n], fig=fig, bins=bins,
                   plot_datapoints=False, plot_density=False)
-
+axes = np.array(fig.axes).reshape((num_params, num_params))
+for i in range(num_params):
+    axes[i, i].set_title(param_labels[i], pad=10)
 fig.suptitle('mcmc parameters distribution (different iteration stops)')
 plt.tight_layout()
 
