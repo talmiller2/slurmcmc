@@ -14,14 +14,15 @@ from slurmcmc.import_utils import deferred_import_function_wrapper
 from slurmcmc.slurm_utils import SlurmPool
 
 
-def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
+def slurm_minimize(loss_fun, param_bounds, num_workers, num_iters,
                    optimizer_package='nevergrad', optimizer_class=None, botorch_kwargs=None,
                    init_points=None, constraint_fun=None, num_asks_max=int(1e3),
                    verbosity=1, slurm_vebosity=0, log_file=None, extra_arg=None,
                    save_restart=False, load_restart=False, restart_file='opt_restart.pkl',
                    work_dir='minimize', job_name='minimize', cluster='slurm', submitit_kwargs=None,
                    budget=int(1e6), job_fail_value=np.nan,
-                   submit_retry_max_attempts=5, submit_retry_wait_seconds=10, submit_delay_seconds=0.1,
+                   submit_retry_max_attempts=5, submit_retry_wait_seconds=10, submit_delay_seconds=0,
+                   check_output_interval_seconds=1, check_output_timeout_minutes=int(1e5),
 
                    # remote run params:
                    remote=False, remote_cluster='slurm', remote_submitit_kwargs=None,
@@ -116,6 +117,8 @@ def slurm_minimize(loss_fun, param_bounds, num_workers=1, num_iters=10,
                                    submit_retry_max_attempts=submit_retry_max_attempts,
                                    submit_retry_wait_seconds=submit_retry_wait_seconds,
                                    submit_delay_seconds=submit_delay_seconds,
+                                   check_output_interval_seconds=check_output_interval_seconds,
+                                   check_output_timeout_minutes=check_output_timeout_minutes,
                                    )
             ini_iter = 0
             num_loss_fun_calls_total = 0

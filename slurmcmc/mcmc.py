@@ -12,12 +12,13 @@ from slurmcmc.import_utils import deferred_import_function_wrapper
 from slurmcmc.slurm_utils import SlurmPool
 
 
-def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values=None,
+def slurm_mcmc(log_prob_fun, init_points, num_iters, init_log_prob_fun_values=None,
                progress=False, verbosity=1, slurm_vebosity=0, log_file=None, extra_arg=None,
                save_restart=False, load_restart=False, restart_file='mcmc_restart.pkl', status_restart=None,
                work_dir='mcmc', job_name='mcmc', cluster='slurm', submitit_kwargs=None, emcee_kwargs=None,
                budget=int(1e6), job_fail_value=-1e10,
-               submit_retry_max_attempts=5, submit_retry_wait_seconds=10, submit_delay_seconds=0.1,
+               submit_retry_max_attempts=5, submit_retry_wait_seconds=10, submit_delay_seconds=0,
+               check_output_interval_seconds=1, check_output_timeout_minutes=int(1e5),
 
                # remote run params:
                remote=False, remote_cluster='slurm', remote_submitit_kwargs=None,
@@ -74,6 +75,8 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters=10, init_log_prob_fun_values
                                    submit_retry_max_attempts=submit_retry_max_attempts,
                                    submit_retry_wait_seconds=submit_retry_wait_seconds,
                                    submit_delay_seconds=submit_delay_seconds,
+                                   check_output_interval_seconds=check_output_interval_seconds,
+                                   check_output_timeout_minutes=check_output_timeout_minutes,
                                    )
 
             # save the extra_arg in the work folder to document the full input used

@@ -1,4 +1,5 @@
 import os
+import time
 
 import numpy as np
 import pandas as pd
@@ -43,6 +44,15 @@ def fun_that_writes_file():
         return x[0] ** 2 + x[1] ** 2
 
     return _fun_that_writes_file
+
+
+@pytest.fixture()
+def fun_that_sleeps():
+    def _fun_that_sleeps(x):
+        time.sleep(5)
+        return x ** 2
+
+    return _fun_that_sleeps
 
 
 def test_slurmpool_localmap(verbosity):
@@ -242,3 +252,14 @@ def test_slurmpool_local_with_extra_arg(work_dir, verbosity, fun_with_extra_arg)
     res = slurm_pool.map(fun_with_extra_arg, points)
     assert res == res_expected
     assert os.path.isfile(os.path.join(work_dir, '0/extra_arg.txt')), 'extra_arg.txt does not appear.'
+
+
+def test_slurmpool_local_fail_on_slurmpool_timeout(work_dir, verbosity, fun_that_sleeps):
+    job_fail_value = np.nan
+    slurm_pool = SlurmPool(work_dir=work_dir, dim_input=1, dim_output=1, cluster='local', verbosity=verbosity,
+                           check_output_timeout_minutes=2 / 60.0, check_output_interval_seconds=0.1,
+                           job_fail_value=job_fail_value)
+    points = [2, 4]
+    res = slurm_pool.map(fun_that_sleeps, points)
+    res_expected_fail = [job_fail_value for _ in points]
+    assert res == res_expected_fail

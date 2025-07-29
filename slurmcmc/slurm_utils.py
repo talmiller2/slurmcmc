@@ -24,7 +24,9 @@ class SlurmPool():
                  verbosity=1, log_file=None, extra_arg=None, submitit_kwargs=None,
                  dim_input=None, dim_output=None,
                  budget=int(1e6), job_fail_value=np.nan,
-                 submit_retry_max_attempts=5, submit_retry_wait_seconds=10, submit_delay_seconds=0.1):
+                 submit_retry_max_attempts=5, submit_retry_wait_seconds=10, submit_delay_seconds=0,
+                 check_output_interval_seconds=1, check_output_timeout_minutes=int(1e5),
+                 ):
         if not isinstance(dim_input, int) and not dim_input > 0:
             err_msg = f'dim_input must be a positive integer. dim_input={dim_input}'
             logging.error(err_msg)
@@ -61,6 +63,9 @@ class SlurmPool():
         self.submit_retry_max_attempts = submit_retry_max_attempts
         self.submit_retry_wait_seconds = submit_retry_wait_seconds
         self.submit_delay_seconds = submit_delay_seconds
+        self.check_output_interval_seconds = check_output_interval_seconds
+        self.check_output_timeout_minutes = check_output_timeout_minutes
+
         set_logging(self.work_dir, self.log_file)
 
         if cluster in ['local', 'slurm']:
@@ -229,11 +234,49 @@ class SlurmPool():
         outputs = []
         for ind_point, job in enumerate(jobs):
             try:
-                output = job.result()
+                # initialize variables for tracking
+                check_output_timeout_seconds = self.check_output_timeout_minutes * 60
+                running_started = False
+                job_running_start_time = None # Will be set when job starts running
+                job_failed = False
+
+                # monitoring loop
+                while not job.done(force_check=True):
+                    state = job.state
+                    if state == 'RUNNING':
+                        if not running_started:
+                            running_started = True
+                            job_running_start_time = time.time()
+                        else:
+                            # Check elapsed time since job started running
+                            job_running_time = time.time() - job_running_start_time
+                            if job_running_time > check_output_timeout_seconds:
+                                if self.verbosity >= 1:
+                                    logging.info(f"ind_point {ind_point} job {job.job_id} exceeded running time of "
+                                                 f"{self.check_output_timeout_minutes:.2f} minutes. Cancelling job.")
+                                job.cancel()  # Works for both local (terminates subprocess) and Slurm (sends scancel)
+                                job_failed = True
+                                break
+
+                    time.sleep(self.check_output_interval_seconds)
+
+                if not job_failed:
+                    # load the result as done in submitit's job.result(), but avoiding job.wait()
+                    outcome, output = job._get_outcome_and_result()
+                    if outcome == "error":
+                        if self.verbosity >= 1:
+                            logging.info('job._get_outcome_and_result() failed. The exception message:\n'
+                                         + str(job.exception()))
+                        job_failed = True
+
             except Exception as e:
                 if self.verbosity >= 1:
-                    logging.info('job.result() failed. The exception message:\n' + str(e))
+                    logging.info('Failed obtaining job result. The exception message:\n' + str(e))
+                job_failed = True
+
+            if job_failed:
                 output = self.job_fail_value
+
             point_dir = iteration_dir + '/' + str(ind_point)
             np.savetxt(point_dir + '/output.txt', [output])
             outputs += [output]
