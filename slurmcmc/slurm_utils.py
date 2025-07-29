@@ -37,14 +37,14 @@ class SlurmPool():
             logging.error(err_msg)
             raise ValueError(err_msg)
         self.dim_output = dim_output
-        self.num_calls = 0  # initialize counter
+        self.num_calls = 0  # initialize call counter
+        self.run_time_minutes_per_call = []
         self.num_evaluated_points = 0  # initialize counter
         self.points_history = []  # all points
         self.values_history = []  # function values of all points
         self.inds_success_points = []  # indices of points that were successfully calculated
         self.inds_failed_points = []  # indices of points where the calculation failed
-        # for fast checking of points that appear in points_history
-        self.evaluated_points_set = set()
+        self.evaluated_points_set = set()  # for fast checking of points that appear in points_history
         self.point_loc_dict = {}
         self.work_dir = work_dir
         self.job_name = job_name
@@ -124,8 +124,10 @@ class SlurmPool():
                 raise Exception(err_msg)
 
     def map_chunk(self, fun, points):
+        map_start_time = time.time()
+
         if self.verbosity >= 1:
-            logging.info('slurm_pool.map called with ' + str(len(points)) + ' points.')
+            logging.info('slurm_pool.map_chunk called with ' + str(len(points)) + ' points.')
 
         # check if points have correct dimensions
         for point in points:
@@ -157,8 +159,6 @@ class SlurmPool():
             if point_tuple not in self.evaluated_points_set:
                 self.evaluated_points_set.add(point_tuple)
 
-        self.num_calls += 1
-
         # update history arrays
         inds_failed = [self.num_evaluated_points + i for i, v in enumerate(res) if self.check_failed(v)]
         inds_success = [self.num_evaluated_points + i for i, v in enumerate(res) if not self.check_failed(v)]
@@ -167,6 +167,11 @@ class SlurmPool():
         self.points_history = self.add_to_history(self.points_history, np.array(points), dim=self.dim_input)
         self.values_history = self.add_to_history(self.values_history, np.array(res), dim=self.dim_output)
         self.num_evaluated_points += len(res)
+
+        # update call counters
+        self.num_calls += 1
+        map_run_time_minutes = (time.time() - map_start_time) / 60.0
+        self.run_time_minutes_per_call += [map_run_time_minutes]
 
         return res
 
@@ -237,7 +242,7 @@ class SlurmPool():
                 # initialize variables for tracking
                 check_output_timeout_seconds = self.check_output_timeout_minutes * 60
                 running_started = False
-                job_running_start_time = None # Will be set when job starts running
+                job_running_start_time = None
                 job_failed = False
 
                 # monitoring loop
@@ -261,7 +266,7 @@ class SlurmPool():
                     time.sleep(self.check_output_interval_seconds)
 
                 if not job_failed:
-                    # load the result as done in submitit's job.result(), but avoiding job.wait()
+                    # load the result as done within submitit's job.result(), but avoid the faulty job.wait()
                     outcome, output = job._get_outcome_and_result()
                     if outcome == "error":
                         if self.verbosity >= 1:

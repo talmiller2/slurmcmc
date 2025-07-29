@@ -13,8 +13,8 @@ plt.close('all')
 plt.interactive(True)
 plt.rcParams.update({'font.size': 12})
 
-# save_plots = False
-save_plots = True
+save_plots = False
+# save_plots = True
 
 np.random.seed(0)
 
@@ -59,7 +59,7 @@ init_points = (np.array([[x0_constraint, y0_constraint] for _ in range(num_walke
 # log_prob_fun = log_prob
 log_prob_fun = log_prob_with_constraint
 status = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                    cluster='local-map', verbosity=1)
+                    cluster='local-map', verbosity=0)
 sampler = status['sampler']
 slurm_pool = status['slurm_pool']
 
