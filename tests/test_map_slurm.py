@@ -29,7 +29,7 @@ def fun(x):
 @pytest.mark.skipif(not is_slurm_cluster(), reason="This test only runs on a Slurm cluster")
 def test_slurmpool_slurm(work_dir):
     slurm_pool = SlurmPool(work_dir=work_dir, dim_input=1, dim_output=1, job_name='test_slurmpool', cluster='slurm',
-                           submitit_kwargs=submitit_kwargs)
+                           log_file='log.txt', submitit_kwargs=submitit_kwargs)
     fun = lambda x: x ** 2
     points = [2, 3, 4]
     res_expected = [fun(point) for point in points]
@@ -47,7 +47,8 @@ def test_slurmpool_slurm_fail_on_slurm_timeout(work_dir):
 
     job_fail_value = np.nan
     slurm_pool = SlurmPool(work_dir=work_dir, dim_input=1, dim_output=1, job_name='test_slurmpool', cluster='slurm',
-                           submitit_kwargs=submitit_kwargs_short_timeout, job_fail_value=job_fail_value)
+                           log_file='log.txt', job_fail_value=job_fail_value,
+                           submitit_kwargs=submitit_kwargs_short_timeout, )
     points = [5, 6]
     res_expected_fail = [job_fail_value for _ in points]  # all jobs should fail due to timeout
     res = slurm_pool.map(fun, points)
@@ -58,7 +59,7 @@ def test_slurmpool_slurm_fail_on_slurm_timeout(work_dir):
 def test_slurmpool_slurm_fail_on_slurmpool_timeout(work_dir):
     job_fail_value = np.nan
     slurm_pool = SlurmPool(work_dir=work_dir, dim_input=1, dim_output=1, job_name='test_slurmpool', cluster='slurm',
-                           job_fail_value=job_fail_value,
+                           log_file='log.txt', job_fail_value=job_fail_value,
                            check_output_interval_seconds=1, check_output_timeout_minutes=0.1)
     points = [5, 6]
     res_expected_fail = [job_fail_value for _ in points]  # all jobs should fail due to timeout
