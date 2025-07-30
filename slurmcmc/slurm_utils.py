@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+import subprocess
 import time
 
 import numpy as np
@@ -245,9 +246,9 @@ class SlurmPool():
                 job_running_start_time = None
                 job_failed = False
 
-                # monitoring loop
-                while not job.done(force_check=True):
-                    state = job.state
+                # job state monitoring loop, will escape if job is no longer running or pending
+                state = check_job_state(job, self.cluster)
+                while state in ['RUNNING', 'PENDING']:
                     if state == 'RUNNING':
                         if not running_started:
                             running_started = True
@@ -264,6 +265,7 @@ class SlurmPool():
                                 break
 
                     time.sleep(self.check_output_interval_seconds)
+                    state = check_job_state(job, self.cluster)
 
                 if not job_failed:
                     # load the result as done within submitit's job.result(), but avoid the faulty job.wait()
@@ -298,3 +300,54 @@ def is_slurm_cluster():
     return True if running in a computer connected to Slurm cluster
     """
     return shutil.which('srun') != None
+
+
+def check_job_state(job, cluster):
+    """
+    Check the state of a job, depending on the cluster type used.
+    """
+    if cluster == 'local':
+        return job.state
+    elif cluster == 'slurm':
+        job_id = job.job_id
+        return check_slurm_job_state(job_id)
+    else:
+        err_msg = f"invalid cluster type: {cluster}."
+        logging.error(err_msg)
+        raise ValueError(err_msg)
+
+
+def check_slurm_job_state(job_id):
+    """
+    Check the state of a SLURM job by its job ID.
+    """
+    try:
+        # Run squeue command to check job status for the specific job ID
+        result = subprocess.run(
+            ['squeue', '-j', str(job_id), '-h', '-o', '%T'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        # Get the output (job state)
+        output = result.stdout.strip()
+
+        # If output is empty, the job is not in the queue
+        if not output:
+            return "NOT_FOUND"
+
+        # Check the job state
+        if output in ["RUNNING", "PENDING"]:
+            return output
+        else:
+            return "OTHER"  # For other states like COMPLETING, FAILED, etc.
+
+    except subprocess.CalledProcessError as e:
+        # Check if the error is due to an invalid job ID
+        if "Invalid job id" in e.stderr:
+            return "NOT_FOUND"
+        # Handle other errors
+        err_msg = f"Error checking job status: {e}"
+        logging.error(err_msg)
+        raise ValueError(err_msg)
