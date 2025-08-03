@@ -19,6 +19,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters, init_log_prob_fun_values=No
                budget=int(1e6), job_fail_value=-1e10,
                submit_retry_max_attempts=5, submit_retry_wait_seconds=10, submit_delay_seconds=0,
                check_output_interval_seconds=1, check_output_timeout_minutes=int(1e5),
+               restart_save_interval=1,
 
                # remote run params:
                remote=False, remote_cluster='slurm', remote_submitit_kwargs=None,
@@ -122,7 +123,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters, init_log_prob_fun_values=No
             status['slurm_pool'] = slurm_pool
             status['ini_iter'] = curr_iter + 1
 
-            if save_restart:
+            if save_restart and np.mod(curr_iter, restart_save_interval) == 0:
                 if verbosity >= 3:
                     logging.info('    saving restart file: ' + work_dir + '/' + restart_file)
                 save_restart_file(status, work_dir, restart_file)

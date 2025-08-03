@@ -23,6 +23,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers, num_iters,
                    budget=int(1e6), job_fail_value=np.nan,
                    submit_retry_max_attempts=5, submit_retry_wait_seconds=10, submit_delay_seconds=0,
                    check_output_interval_seconds=1, check_output_timeout_minutes=int(1e5),
+                   restart_save_interval=1,
 
                    # remote run params:
                    remote=False, remote_cluster='slurm', remote_submitit_kwargs=None,
@@ -257,7 +258,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers, num_iters,
             status['num_asks_total'] = num_asks_total
             status['candidates_ask_time_per_iter'] = candidates_ask_time_per_iter
 
-            if save_restart:
+            if save_restart and np.mod(curr_iter, restart_save_interval) == 0:
                 if verbosity >= 3:
                     logging.info('    saving restart file: ' + work_dir + '/' + restart_file)
 
