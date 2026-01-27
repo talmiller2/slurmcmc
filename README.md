@@ -51,5 +51,6 @@ This mode is the one used in the examples below for quick evaluations.
 ## Pedagogical Examples
 
 1. [Optimization](examples/docs/optimization.md)
-2. [MCMC](examples/docs/mcmc.md)
-3. [MCMC with surrogate](examples/docs/mcmc_surrogate.md)
+2. [Comparing Optimization Algorithms](examples/docs/optimization_algorithms_comparison.md)
+1. [MCMC](examples/docs/mcmc.md)
+1. [MCMC with surrogate](examples/docs/mcmc_surrogate.md)
