@@ -29,9 +29,10 @@ def slurm_minimize(loss_fun, param_bounds, num_workers, num_iters,
                    remote=False, remote_cluster='slurm', remote_submitit_kwargs=None,
                    ):
     """
-    combine submitit + nevergrad + botorch to allow parallel optimization on slurm.
+    Combine submitit + nevergrad + botorch to allow parallel optimization on slurm.
     has capability to keep drawing points using optimizer.ask() until num_workers points are found, that were not
     already calculated previously, and that pass constraint_fun. This prevents wasting compute on irrelevant points.
+    Default optimizer is nevergrad's implementation for DifferentialEvolution.
     """
     set_logging(work_dir, log_file)
     signal.signal(signal.SIGTERM, signal_handler)  # force termination when canceling job on Slurm via scancel
@@ -99,7 +100,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers, num_iters,
                 if optimizer_class is None:
                     optimizer_class = BoTorchOptimizer
 
-                botorch_defaults = {'num_restarts': 10, 'raw_samples': 100, 'num_best_points': None}
+                botorch_defaults = {'num_restarts': 10, 'raw_samples': 100, 'num_best_points': None, 'options': None}
                 for key, value in botorch_defaults.items():
                     if key not in botorch_kwargs:
                         botorch_kwargs[key] = value
@@ -120,6 +121,7 @@ def slurm_minimize(loss_fun, param_bounds, num_workers, num_iters,
                                    submit_delay_seconds=submit_delay_seconds,
                                    check_output_interval_seconds=check_output_interval_seconds,
                                    check_output_timeout_minutes=check_output_timeout_minutes,
+                                   record_history=True, # required in this implementation
                                    )
             ini_iter = 0
             num_loss_fun_calls_total = 0
@@ -187,8 +189,10 @@ def slurm_minimize(loss_fun, param_bounds, num_workers, num_iters,
 
                     for candidate in candidates_batch:
                         candidate_tuple = point_to_tuple(candidate)
-                        if (candidate_tuple not in slurm_pool.evaluated_points_set
-                                and candidate_tuple not in candidates_set):
+                        proceed_with_candidate = ((candidate_tuple not in slurm_pool.evaluated_points_set)
+                                                  and (candidate_tuple not in candidates_set))
+
+                        if proceed_with_candidate:
                             if constraint_fun is not None:
                                 constraint_passed = constraint_fun(*combine_args(candidate, extra_arg)) <= 0
                                 num_constraint_fun_calls_total += 1

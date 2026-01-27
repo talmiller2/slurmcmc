@@ -19,14 +19,14 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters, init_log_prob_fun_values=No
                budget=int(1e6), job_fail_value=-1e10,
                submit_retry_max_attempts=5, submit_retry_wait_seconds=10, submit_delay_seconds=0,
                check_output_interval_seconds=1, check_output_timeout_minutes=int(1e5),
-               restart_save_interval=1,
+               restart_save_interval=1, record_history=True,
 
                # remote run params:
                remote=False, remote_cluster='slurm', remote_submitit_kwargs=None,
                ):
     """
-    combine submitit + emcee to allow ensemble mcmc on slurm.
-    the number of parallelizable evaluations in the default emcee "move" is len(init_points)/2,
+    Combine submitit + emcee to allow ensemble mcmc on slurm.
+    The number of parallelizable evaluations in the default emcee "move" is len(init_points)/2,
     except the first one on the init_points which is len(init_points).
     """
     set_logging(work_dir, log_file)
@@ -78,6 +78,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters, init_log_prob_fun_values=No
                                    submit_delay_seconds=submit_delay_seconds,
                                    check_output_interval_seconds=check_output_interval_seconds,
                                    check_output_timeout_minutes=check_output_timeout_minutes,
+                                   record_history=record_history,
                                    )
 
             # save the extra_arg in the work folder to document the full input used

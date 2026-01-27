@@ -3,7 +3,6 @@ import os
 import shutil
 import subprocess
 import time
-
 import numpy as np
 import submitit
 
@@ -27,6 +26,7 @@ class SlurmPool():
                  budget=int(1e6), job_fail_value=np.nan,
                  submit_retry_max_attempts=5, submit_retry_wait_seconds=10, submit_delay_seconds=0,
                  check_output_interval_seconds=1, check_output_timeout_minutes=int(1e5),
+                 record_history=True,
                  ):
         if not isinstance(dim_input, int) and not dim_input > 0:
             err_msg = f'dim_input must be a positive integer. dim_input={dim_input}'
@@ -40,13 +40,15 @@ class SlurmPool():
         self.dim_output = dim_output
         self.num_calls = 0  # initialize call counter
         self.run_time_minutes_per_call = []
-        self.num_evaluated_points = 0  # initialize counter
-        self.points_history = []  # all points
-        self.values_history = []  # function values of all points
-        self.inds_success_points = []  # indices of points that were successfully calculated
-        self.inds_failed_points = []  # indices of points where the calculation failed
-        self.evaluated_points_set = set()  # for fast checking of points that appear in points_history
-        self.point_loc_dict = {}
+        self.record_history = record_history
+        if self.record_history:
+            self.num_evaluated_points = 0  # initialize counter
+            self.points_history = []  # all points
+            self.values_history = []  # function values of all points
+            self.inds_success_points = []  # indices of points that were successfully calculated
+            self.inds_failed_points = []  # indices of points where the calculation failed
+            self.evaluated_points_set = set()  # for fast checking of points that appear in points_history
+            self.point_loc_dict = {}
         self.work_dir = work_dir
         self.job_name = job_name
         self.cluster = cluster
@@ -154,20 +156,21 @@ class SlurmPool():
                 logging.error(err_msg)
                 raise ValueError(err_msg)
 
-        # track if point was previously evaluated
-        for point in points:
-            point_tuple = point_to_tuple(point)
-            if point_tuple not in self.evaluated_points_set:
-                self.evaluated_points_set.add(point_tuple)
+        if self.record_history:
+            # track if point was previously evaluated
+            for point in points:
+                point_tuple = point_to_tuple(point)
+                if point_tuple not in self.evaluated_points_set:
+                    self.evaluated_points_set.add(point_tuple)
 
-        # update history arrays
-        inds_failed = [self.num_evaluated_points + i for i, v in enumerate(res) if self.check_failed(v)]
-        inds_success = [self.num_evaluated_points + i for i, v in enumerate(res) if not self.check_failed(v)]
-        self.inds_failed_points += inds_failed
-        self.inds_success_points += inds_success
-        self.points_history = self.add_to_history(self.points_history, np.array(points), dim=self.dim_input)
-        self.values_history = self.add_to_history(self.values_history, np.array(res), dim=self.dim_output)
-        self.num_evaluated_points += len(res)
+            # update history arrays
+            inds_failed = [self.num_evaluated_points + i for i, v in enumerate(res) if self.check_failed(v)]
+            inds_success = [self.num_evaluated_points + i for i, v in enumerate(res) if not self.check_failed(v)]
+            self.inds_failed_points += inds_failed
+            self.inds_success_points += inds_success
+            self.points_history = self.add_to_history(self.points_history, np.array(points), dim=self.dim_input)
+            self.values_history = self.add_to_history(self.values_history, np.array(res), dim=self.dim_output)
+            self.num_evaluated_points += len(res)
 
         # update call counters
         self.num_calls += 1
@@ -212,10 +215,11 @@ class SlurmPool():
             os.makedirs(point_dir, exist_ok=True)
             np.savetxt(point_dir + '/input.txt', [point])
 
-            # track location of point calculation
-            point_tuple = point_to_tuple(point)
-            if point_tuple not in self.evaluated_points_set:
-                self.point_loc_dict[point_tuple] = (self.num_calls, ind_point)
+            if self.record_history:
+                # track location of point calculation
+                point_tuple = point_to_tuple(point)
+                if point_tuple not in self.evaluated_points_set:
+                    self.point_loc_dict[point_tuple] = (self.num_calls, ind_point)
 
         # save current iteration points in the main iteration_dir
         np.savetxt(iteration_dir + '/inputs.txt', np.array(points))

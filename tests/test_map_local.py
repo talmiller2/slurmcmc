@@ -263,3 +263,14 @@ def test_slurmpool_local_fail_on_slurmpool_timeout(work_dir, verbosity, fun_that
     res = slurm_pool.map(fun_that_sleeps, points)
     res_expected_fail = [job_fail_value for _ in points]
     assert res == res_expected_fail
+
+
+def test_slurmpool_localmap_record_history_false(verbosity):
+    slurm_pool = SlurmPool(dim_input=1, dim_output=1, cluster='local-map', verbosity=verbosity,
+                           record_history=False)
+    fun = lambda x: x ** 2
+    points = [2, 3, 4]
+    res = slurm_pool.map(fun, points)
+    assert not hasattr(slurm_pool, 'points_history'), (
+        "slurm_pool still has 'points_history' attribute even though record_history=False"
+    )
