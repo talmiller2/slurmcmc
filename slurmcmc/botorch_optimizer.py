@@ -11,12 +11,13 @@ from gpytorch.mlls.exact_marginal_log_likelihood import ExactMarginalLogLikeliho
 
 
 class BoTorchOptimizer():
-    def __init__(self, lower_bounds, upper_bounds, num_workers, num_restarts, raw_samples, num_best_points):
+    def __init__(self, lower_bounds, upper_bounds, num_workers, num_restarts, raw_samples, num_best_points, options):
         self.bounds_torch = torch.tensor([lower_bounds, upper_bounds], dtype=torch.float)
         self.num_workers = num_workers
         self.num_restarts = num_restarts
         self.raw_samples = raw_samples
         self.num_best_points = num_best_points
+        self.options = options
 
     def ask(self, x_pts, y_pts):
 
@@ -41,7 +42,8 @@ class BoTorchOptimizer():
             fit_gpytorch_mll(mll)
             acq_function = qLogExpectedImprovement(model=model, best_f=torch.max(y_torch))
             points_torch, _ = optimize_acqf(acq_function=acq_function, bounds=self.bounds_torch, q=self.num_workers,
-                                            num_restarts=self.num_restarts, raw_samples=self.raw_samples)
+                                            num_restarts=self.num_restarts, raw_samples=self.raw_samples,
+                                            options=self.options)
 
         points_torch = points_torch.to(torch.float64)  # without this points are float32 which is not JSON serializable
         points = points_torch.numpy()  # convert to np.array
