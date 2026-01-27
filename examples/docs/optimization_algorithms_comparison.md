@@ -31,13 +31,17 @@ This is repeated for 3 separate sets of initial points (indicated by different l
 The computation run-time (for a single full optimization run) is written in the legend in each case.
 
 We perform this for different numbers of parameters $d$. 
+
 For $d=2$:
+
 <img src="pics/example_optimization_algorithms_comparison_2d.png" alt="example_optimization_algorithms_comparison_2d.png" width="700" height="auto">
 
 For $d=5$:
+
 <img src="pics/example_optimization_algorithms_comparison_5d.png" alt="example_optimization_algorithms_comparison_5d.png" width="700" height="auto">
 
 For $d=10$:
+
 <img src="pics/example_optimization_algorithms_comparison_10d.png" alt="example_optimization_algorithms_comparison_10d.png" width="700" height="auto">
 
 We can see that in this survey, based on the specific type of loss functions used,
