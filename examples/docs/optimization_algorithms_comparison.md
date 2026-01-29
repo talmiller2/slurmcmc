@@ -44,6 +44,4 @@ For $d=10$:
 
 <img src="pics/example_optimization_algorithms_comparison_10d.png" alt="example_optimization_algorithms_comparison_10d.png" width="700" height="auto">
 
-We can see that in this survey, based on the specific type of loss functions used,
-the PSO algorithm appears better than the other algorithms DE and BO. 
-The BO algorithm mostly did not get ahead of the alternatives (except for the initial iterations in $d=10$), despite it having a significant computational overhead.
+PSO outperforms DE and BO on the tested loss functions. BO shows disproportionately high computational cost while rarely improving upon the alternatives (except briefly when $d=10$).
