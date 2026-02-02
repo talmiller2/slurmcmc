@@ -22,7 +22,7 @@ The optimization algorithms are their chosen settings:
 
 Note: in BO, each optimization step involves training a Gaussian Process surrogate model based on the past sampled points, to then use for the selection of future candidate points.
 This process scales as $\mathcal{O}(n^3)$ with $n$ being the size of the data-set used for training, which could potentially significantly increase the computation time per iteration.
-Therefore, in our implementation of BO in [botorch_optimizer.py](../slurmcmc/botorch_optimizer.py), we allow to trim the data-set size used to the ``num_best_points`` with the lowest loss values encountered so far.
+Therefore, in our implementation of BO in [botorch_optimizer.py](../../slurmcmc/botorch_optimizer.py), we allow to trim the data-set size used to the ``num_best_points`` with the lowest loss values encountered so far.
 However, by default (and in this example) we do not constrain the size of the data-set.
 
 To initiate the minimization, 50 initial points will be randmoly chosen in the minimization domain, 
