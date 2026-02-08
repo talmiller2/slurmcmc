@@ -58,6 +58,7 @@ def test_slurm_mcmc(verbosity, seed):
     np.testing.assert_equal(samples.shape, (num_calculated_points, num_params))
     np.testing.assert_equal(status['slurm_pool'].points_history.shape, (num_calculated_points, num_params))
     assert status['slurm_pool'].num_calls == 7
+    assert len(status['time_per_iter']) == num_iters
 
 
 def test_slurm_mcmc_local(work_dir, verbosity, seed):

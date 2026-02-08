@@ -1,6 +1,7 @@
 import functools
 import logging
 import signal
+import time
 
 import emcee
 import numpy as np
@@ -13,13 +14,14 @@ from slurmcmc.slurm_utils import SlurmPool
 
 
 def slurm_mcmc(log_prob_fun, init_points, num_iters, init_log_prob_fun_values=None,
-               progress=False, verbosity=1, slurm_vebosity=0, log_file=None, extra_arg=None,
+               progress=False, verbosity=1, slurm_vebosity=0, print_iter_interval=1, log_file=None, extra_arg=None,
                save_restart=False, load_restart=False, restart_file='mcmc_restart.pkl', status_restart=None,
                work_dir='mcmc', job_name='mcmc', cluster='slurm', submitit_kwargs=None, emcee_kwargs=None,
                budget=int(1e6), job_fail_value=-1e10,
                submit_retry_max_attempts=5, submit_retry_wait_seconds=10, submit_delay_seconds=0,
                check_output_interval_seconds=1, check_output_timeout_minutes=int(1e5),
                restart_save_interval=1, record_history=True,
+
 
                # remote run params:
                remote=False, remote_cluster='slurm', remote_submitit_kwargs=None,
@@ -68,6 +70,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters, init_log_prob_fun_values=No
             slurm_pool = status['slurm_pool']
             sampler.pool = slurm_pool
             ini_iter = status['ini_iter']
+            time_per_iter = status['time_per_iter']
         else:
             # using extra_arg=None because emcee deals with extra_arg internally by wrapping the function
             slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, extra_arg=extra_arg,
@@ -107,15 +110,20 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters, init_log_prob_fun_values=No
 
             # initializations
             ini_iter = 0
+            time_per_iter = []
 
             # from here on, emcee deals itself with extra arguments by internally wrapping the log_prob_fun,
             # so we remove it from slurm_pool to avoid erroneously double wrapping it
             slurm_pool.extra_arg = None
 
         for curr_iter in range(ini_iter, ini_iter + num_iters):
-            if verbosity >= 1:
+            if verbosity >= 1 and np.mod(curr_iter, print_iter_interval) == 0:
                 logging.info('### curr mcmc iter: ' + str(curr_iter))
+            t_start_iter = time.time()
             state = sampler.run_mcmc(initial_state=sampler.initial_state, nsteps=1, progress=progress)
+            curr_iter_time = time.time() - t_start_iter
+            if verbosity >= 2 and np.mod(curr_iter, print_iter_interval) == 0:
+                logging.info(f'    current iter run time: {curr_iter_time:.3f}s.')
             sampler.initial_state = state
 
             # mcmc status
@@ -123,6 +131,8 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters, init_log_prob_fun_values=No
             status['sampler'] = sampler
             status['slurm_pool'] = slurm_pool
             status['ini_iter'] = curr_iter + 1
+            time_per_iter += [curr_iter_time]
+            status['time_per_iter'] = time_per_iter
 
             if save_restart and np.mod(curr_iter, restart_save_interval) == 0:
                 if verbosity >= 3:

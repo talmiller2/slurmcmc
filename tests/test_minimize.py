@@ -126,6 +126,7 @@ def test_slurm_minimize_1param(verbosity, seed, loss_fun_1d):
 
     assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.02
     assert result['loss_min'] <= 1e-3
+    assert len(result['candidates_ask_time_per_iter']) == num_iters
 
 
 def test_slurm_minimize_1param_partially_nan_function(verbosity, seed, loss_fun_1d_partially_nan):
@@ -391,3 +392,4 @@ def test_slurm_remote_slurm_minimize_1param(work_dir, verbosity, seed, loss_fun_
     result = job.result()
     assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.02
     assert result['loss_min'] <= 1e-3
+
