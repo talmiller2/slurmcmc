@@ -1,5 +1,6 @@
 import os
 
+import emcee
 import numpy as np
 import pytest
 from scipy.optimize import rosen
@@ -195,8 +196,6 @@ def test_slurm_mcmc_init_log_prob_fun_values(verbosity, seed):
 
 
 def test_slurm_mcmc_with_extra_arg_localmap(verbosity, seed):
-    # print('locals=', locals())
-
     num_params = 2
     num_walkers = 5
     num_iters = 2
@@ -287,3 +286,51 @@ def test_calculate_unique_points_weights(verbosity):
     points_weights_dict_expected = {(0, 0): 3, (0, 1): 2, (2, 0): 1, (1, 3): 1}
     assert unique_points_set == unique_points_set_expected, "incorrect unique_points_set"
     assert points_weights_dict == points_weights_dict_expected, "incorrect points_weights_dict"
+
+
+def test_slurm_mcmc_with_backend(work_dir, verbosity, seed):
+    backend_file = os.path.join(work_dir, 'emcee_backend.h5')
+    backend = emcee.backends.HDFBackend(backend_file)
+
+    num_params = 2
+    num_walkers = 10
+    num_iters = 3
+    minima = np.array([1, 1])
+    init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
+    status = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
+                        verbosity=verbosity, slurm_vebosity=verbosity,
+                        cluster='local-map',
+                        work_dir=work_dir, emcee_kwargs={'backend': backend},
+                        )
+    samples = status['sampler'].get_chain(flat=True)
+    samples = np.vstack([init_points, samples])  # init_points are not inherently included in the mcmc sampler samples
+    num_calculated_points = num_walkers * (num_iters + 1)
+    np.testing.assert_equal(samples.shape, (num_calculated_points, num_params))
+    np.testing.assert_equal(status['slurm_pool'].points_history.shape, (num_calculated_points, num_params))
+    assert status['slurm_pool'].num_calls == 7
+
+
+def test_local_remote_slurm_mcmc_with_backend(work_dir, verbosity, seed):
+    backend_file = os.path.join(work_dir, 'emcee_backend.h5')
+    backend = emcee.backends.HDFBackend(backend_file)
+
+    num_params = 2
+    num_walkers = 10
+    num_iters = 3
+    minima = np.array([1, 1])
+    init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
+
+    job = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
+                     verbosity=verbosity, slurm_vebosity=verbosity,
+                     work_dir=work_dir, cluster='local-map',
+                     remote=True, remote_cluster='local',
+                     emcee_kwargs={'backend': backend},
+                     )
+
+    status = job.result()
+    samples = status['sampler'].get_chain(flat=True)
+    samples = np.vstack([init_points, samples])  # init_points are not inherently included in the mcmc sampler samples
+    num_calculated_points = num_walkers * (num_iters + 1)
+    np.testing.assert_equal(samples.shape, (num_calculated_points, num_params))
+    np.testing.assert_equal(status['slurm_pool'].points_history.shape, (num_calculated_points, num_params))
+    assert status['slurm_pool'].num_calls == 7
