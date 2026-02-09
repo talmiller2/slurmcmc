@@ -15,7 +15,7 @@ Implemented by wrapping and stitching together [``submitit``](https://github.com
 Install prerequisites:
 
 ```
-pip install submitit nevergrad botorch emcee corner
+pip install submitit nevergrad botorch emcee corner h5py
 ```
 
 Install the package locally using either
@@ -51,6 +51,7 @@ This mode is the one used in the examples below for quick evaluations.
 ## Pedagogical Examples
 
 1. [Optimization](examples/docs/optimization.md)
-2. [Comparing Optimization Algorithms](examples/docs/optimization_algorithms_comparison.md)
+1. [Comparing Optimization Algorithms](examples/docs/optimization_algorithms_comparison.md)
 1. [MCMC](examples/docs/mcmc.md)
+1. [Comparing MCMC and MC](examples/docs/mcmc_and_mc_comparison.md)
 1. [MCMC with surrogate](examples/docs/mcmc_surrogate.md)

@@ -26,7 +26,7 @@ Meaning, a hybrid approach would involve the following steps:
 
 This example's plots are generated using [example_mcmc_surrogate.py](../example_mcmc_surrogate.py).
 
-As in the previous [MCMC example](mcmc.md), we choose the log-probability function as minus the 2d-rosenbrock function, 
+As in the [MCMC example](mcmc.md), we choose the log-probability function as minus the 2d-Rosenbrock function, 
 with zero probability assigned outside of the constraint circle. 
 This will serve as the "expensive" query, to demonstrate the procedure above.
 

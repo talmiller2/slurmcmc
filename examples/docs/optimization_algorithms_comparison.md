@@ -3,7 +3,7 @@
 
 This example's plots are generated using [example_optimization_algorithms_comparison.py](../example_optimization_algorithms_comparison.py).
 
-We perform minimization on the rosenbrock function with $d$ parameters (without additional constraints):
+We perform minimization on the Rosenbrock function with $d$ parameters (without additional constraints):
 
 $$
 f(\mathbf{x}) = \sum_{i=1}^{d-1} \Bigl[ 100(x_{i+1} - x_i^2)^2 + (1 - x_i)^2 \Bigr]

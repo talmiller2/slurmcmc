@@ -10,7 +10,7 @@ which is also achieved in this step.
 
 This example's plots are generated using [example_optimization.py](../example_optimization.py).
 
-We choose the loss function as the 2d-rosenbrock function, with a circle constraint:
+We choose the loss function as the 2d-Rosenbrock function, with a circle constraint:
 
 $$
 \begin{aligned}

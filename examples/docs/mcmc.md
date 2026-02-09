@@ -10,8 +10,8 @@ distribution efficiently.
 
 This example's plots are generated using [example_mcmc.py](../example_mcmc.py).
 
-We choose the log-probability function as minus the 2d-rosenbrock function, with zero probability assigned outside of 
-the constraint circle (as defined in the [optimization example](examples/docs/optimization.md)).
+We choose the log-probability function as minus the 2d-Rosenbrock function, with zero probability assigned outside of 
+the constraint circle (as defined in the [optimization example](optimization.md)).
 The parallel ensemble MCMC algorithm is via [``emcee``](https://github.com/dfm/emcee).
 
 We pick the initial points to initiate the MCMC chains (or workers) at random, but a for an expensive black-box query 
