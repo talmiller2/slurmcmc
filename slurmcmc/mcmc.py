@@ -14,7 +14,8 @@ from slurmcmc.slurm_utils import SlurmPool
 
 
 def slurm_mcmc(log_prob_fun, init_points, num_iters, init_log_prob_fun_values=None,
-               progress=False, verbosity=1, slurm_vebosity=0, print_iter_interval=1, log_file=None, extra_arg=None,
+               progress=False, skip_initial_state_check=True,
+               verbosity=1, slurm_vebosity=0, print_iter_interval=1, log_file=None, extra_arg=None,
                save_restart=False, load_restart=False, restart_file='mcmc_restart.pkl', status_restart=None,
                work_dir='mcmc', job_name='mcmc', cluster='slurm', submitit_kwargs=None, emcee_kwargs=None,
                budget=int(1e6), job_fail_value=-1e10,
@@ -120,7 +121,8 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters, init_log_prob_fun_values=No
             if verbosity >= 1 and np.mod(curr_iter, print_iter_interval) == 0:
                 logging.info('### curr mcmc iter: ' + str(curr_iter))
             t_start_iter = time.time()
-            state = sampler.run_mcmc(initial_state=sampler.initial_state, nsteps=1, progress=progress)
+            state = sampler.run_mcmc(initial_state=sampler.initial_state, nsteps=1,
+                                     progress=progress, skip_initial_state_check=skip_initial_state_check)
             curr_iter_time = time.time() - t_start_iter
             if verbosity >= 2 and np.mod(curr_iter, print_iter_interval) == 0:
                 logging.info(f'    current iter run time: {curr_iter_time:.3f}s.')
