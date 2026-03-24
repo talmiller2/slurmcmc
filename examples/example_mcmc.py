@@ -5,8 +5,6 @@ import numpy as np
 from matplotlib.pyplot import cm
 from scipy.optimize import rosen
 
-from slurmcmc.general_utils import point_to_tuple
-from slurmcmc.mcmc import calculate_unique_points_weights
 from slurmcmc.mcmc import slurm_mcmc, get_gelman_rubin_statistic
 
 plt.close('all')
@@ -53,8 +51,6 @@ def log_prob_with_constraint(x):
 # initial points chosen to satisfy constraint
 init_points = (np.array([[x0_constraint, y0_constraint] for _ in range(num_walkers)])
                + (r_constraint * (np.random.rand(num_walkers, num_params) - 0.5)))
-# init_points = (np.array([minima for _ in range(num_walkers)])
-#                + 0.5 * np.random.randn(num_walkers, num_params))
 
 # log_prob_fun = log_prob
 log_prob_fun = log_prob_with_constraint
@@ -78,6 +74,7 @@ if burnin > 0:
 
 samples = sampler.get_chain(discard=burnin, thin=thin)
 samples_flat = sampler.get_chain(discard=burnin, thin=thin, flat=True)
+samples_flat_log_prob = sampler.get_log_prob(discard=burnin, thin=thin, flat=True)
 
 # integrated auto-correlation time multiples per chain
 tau_multiples = num_iters / tau
@@ -189,18 +186,17 @@ plt.tight_layout()
 if save_plots:
     plt.savefig('example_mcmc_convergence_diagnostics')
 
-mcmc_points_set, points_weights_dict = calculate_unique_points_weights(samples_flat)
-all_values_history = -2 * slurm_pool.values_history[:, 0]
-mcmc_values_history = all_values_history.copy()
-for ind_point, point in enumerate(slurm_pool.points_history):
-    if point_to_tuple(point) not in mcmc_points_set:
-        mcmc_values_history[ind_point] = np.nan
+all_points_chi2_history = -2 * slurm_pool.values_history[:, 0]
+num_iters_array_all = np.linspace(-0.5, num_iters, all_points_chi2_history.shape[0])
+
+samples_flat_chi2 = -2 * samples_flat_log_prob
+num_iters_array_mcmc = np.linspace(-0.5 + burnin, num_iters, samples_flat_chi2.shape[0])
 
 fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(12, 5))
 ax = axs[0]
-num_iters_array = np.linspace(-0.5, num_iters, all_values_history.shape[0])
-ax.plot(num_iters_array, all_values_history, '.k', linewidth=1, alpha=0.1, label='all samples')
-ax.plot(num_iters_array, mcmc_values_history, '.r', linewidth=1, alpha=0.1, label='mcmc samples')
+ax.plot(num_iters_array_all, all_points_chi2_history, '.k', linewidth=1, alpha=0.1, label='all points visited')
+ax.plot(num_iters_array_mcmc, samples_flat_chi2, '.r', linewidth=1, alpha=0.1, label='mcmc samples')
+
 ax.set_xlabel('# iter')
 ax.set_ylabel('$\\chi^2$')
 ax.set_yscale('log')
@@ -209,21 +205,20 @@ ax.legend()
 ax = axs[1]
 bins = 50
 hist_range = (0, 4 * num_params)
-ax.hist(all_values_history, range=hist_range, bins=bins, color='k', alpha=0.5, density=True,
-        label='all samples')
-ax.hist(mcmc_values_history, range=hist_range, bins=bins, color='r', alpha=0.5, density=True,
-        label=f'mcmc samples mean={np.nanmean(mcmc_values_history):.1f}')
+ax.hist(all_points_chi2_history, range=hist_range, bins=bins, color='k', density=True, histtype='step',
+        label='all points visited')
+ax.hist(samples_flat_chi2, range=hist_range, bins=bins, color='r', density=True, histtype='step',
+        label=f'mcmc samples mean={np.nanmean(samples_flat_chi2):.1f}')
 
 # plot the values for a reference chi^2 distribution (sum of normal distributions squared)
-samples_chi2 = np.random.chisquare(num_params, len(mcmc_values_history))
-ax.hist(samples_chi2, range=hist_range, bins=bins, color='b', alpha=0.2, density=True,
-        label=f'$\\chi^2(d={num_params})$ samples mean={np.nanmean(samples_chi2):.1f}')
+samples_chi2_dist = np.random.chisquare(num_params, len(all_points_chi2_history))
+ax.hist(samples_chi2_dist, range=hist_range, bins=bins, color='b', density=True, histtype='step',
+        label=f'$\\chi^2(d={num_params})$ distribution mean={np.nanmean(samples_chi2_dist):.1f}')
 
 ax.set_xlabel('$\\chi^2$')
 ax.set_yticks([])
 ax.legend()
 
-fig.suptitle('log-probability values explored during mcmc')
 fig.suptitle('$\\chi^2$ values ($-2 \\times$log-probability) values explored during mcmc')
 fig.tight_layout()
 
@@ -239,7 +234,7 @@ for ind_iter in range(num_iters):
     else:
         ind_ini = ind_fin
         ind_fin += num_walkers
-    num_failed = np.sum(all_values_history[ind_ini:ind_fin] > 1e7)
+    num_failed = np.sum(all_points_chi2_history[ind_ini:ind_fin] > 1e7)
     failed_constraint_percentage_list += [100.0 * num_failed / (ind_fin - ind_ini)]
 plt.figure(figsize=(6, 5))
 plt.plot(iters_list, failed_constraint_percentage_list, 'ob')
