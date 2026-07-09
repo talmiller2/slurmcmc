@@ -5,20 +5,8 @@ import time
 import numpy as np
 import pytest
 
-from slurmcmc.general_utils import delete_directory
 from slurmcmc.slurm_utils import SlurmPool, is_slurm_cluster
 from tests.submitit_defaults import submitit_kwargs
-
-
-@pytest.fixture()
-def work_dir(request):
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    work_dir = os.path.join(base_dir, f'test_work_dir_{request.node.name}')
-    os.makedirs(work_dir, exist_ok=True)
-    os.chdir(work_dir)
-    yield work_dir
-    os.chdir(base_dir)
-    delete_directory(work_dir)
 
 
 def fun(x):

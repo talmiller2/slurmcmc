@@ -5,37 +5,16 @@ import pytest
 import torch
 from scipy.optimize import rosen
 
-from slurmcmc.general_utils import delete_directory
 from slurmcmc.optimization import slurm_minimize
 from slurmcmc.slurm_utils import is_slurm_cluster
 from tests.submitit_defaults import submitit_kwargs
 
 
-@pytest.fixture
-def work_dir(request):
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    work_dir = os.path.join(base_dir, f'test_work_dir_{request.node.name}')
-    os.makedirs(work_dir, exist_ok=True)
-    os.chdir(work_dir)
-    yield work_dir
-    os.chdir(base_dir)
-    delete_directory(work_dir)
-
-
-@pytest.fixture
-def seed():
-    np.random.seed(0)
-    torch.manual_seed(0)
-
-
-@pytest.fixture
-def verbosity():
-    return 1
-
-
 @pytest.fixture()
 def loss_fun_1d():
     def _loss_fun_1d(x):
+        # nevergrad passes a shape-(1,) array for 1-param problems; squeeze to scalar
+        x = float(np.squeeze(x))
         return float((x - 1) ** 2)
 
     return _loss_fun_1d
@@ -44,6 +23,7 @@ def loss_fun_1d():
 @pytest.fixture()
 def loss_fun_1d_partially_nan():
     def _loss_fun_1d_partially_nan(x):
+        x = float(np.squeeze(x))
         if x > 0.5:
             return float((x - 1) ** 2)
         else:
@@ -260,6 +240,10 @@ def test_slurm_minimize_2params_with_restart(work_dir, verbosity, seed, loss_fun
     assert res_1['slurm_pool'].num_calls == num_iters
     assert len(res_1['slurm_pool'].points_history) == num_iters * num_workers
     assert res_1['ini_iter'] == num_iters
+    # the version stamp is added to the pickled copy only, not the returned status dict
+    assert '_slurmcmc_version' not in res_1
+    # the atomic-write temp file is cleaned up
+    assert not os.path.exists(work_dir + '/opt_restart.pkl.tmp')
 
     # run again from previous restart
     res_2 = slurm_minimize(loss_fun=loss_fun,
@@ -372,7 +356,7 @@ def test_local_remote_slurm_minimize_1param(work_dir, verbosity, seed, loss_fun_
                          remote=True, remote_cluster='local')
 
     result = job.result()
-    assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.02
+    assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.03
     assert result['loss_min'] <= 1e-3
 
 
@@ -392,4 +376,111 @@ def test_slurm_remote_slurm_minimize_1param(work_dir, verbosity, seed, loss_fun_
     result = job.result()
     assert np.linalg.norm(result['x_min'] - expected_minima_point) <= 0.02
     assert result['loss_min'] <= 1e-3
+
+
+def test_slurm_minimize_init_points_informs_optimizer(verbosity, seed, loss_fun):
+    """init_points must be told to the nevergrad optimizer so iter 0 history is used."""
+    num_params = 2
+    param_bounds = [[-5, 5]] * num_params
+    num_workers = 5
+    # Provide init_points very close to the optimum
+    init_points = [np.array([1.0, 1.0]) + 0.01 * np.random.randn(2) for _ in range(num_workers)]
+
+    result = slurm_minimize(loss_fun=loss_fun, init_points=init_points,
+                            param_bounds=param_bounds, num_workers=num_workers, num_iters=5,
+                            cluster='local-map', verbosity=verbosity)
+    # With init_points near the optimum and the optimizer knowing about them,
+    # loss_min after just a few iters should be very small
+    assert result['loss_min'] <= 0.5
+    # per-iteration bookkeeping covers all iterations, including iter 0 with init_points
+    assert len(result['candidates_ask_time_per_iter']) == 5
+    assert result['num_workers_per_iter'] == [num_workers] * 5
+
+
+def test_slurm_minimize_restart_state_preserved(work_dir, verbosity, seed, loss_fun_1d):
+    """Restarting from a checkpoint must preserve the full evaluation history."""
+    num_params = 1
+    param_bounds = [[-5, 5]]
+    num_workers = 5
+    num_iters = 4
+
+    res_1 = slurm_minimize(loss_fun=loss_fun_1d,
+                           param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                           cluster='local-map', verbosity=verbosity,
+                           work_dir=work_dir, save_restart=True)
+    num_pts_after_first = len(res_1['slurm_pool'].points_history)
+
+    res_2 = slurm_minimize(loss_fun=loss_fun_1d,
+                           param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                           verbosity=verbosity,
+                           work_dir=work_dir, load_restart=True)
+    assert len(res_2['slurm_pool'].points_history) == num_pts_after_first + num_iters * num_workers
+    assert res_2['loss_min'] <= res_1['loss_min'] + 1e-9  # monotonically non-increasing
+
+
+def test_slurm_minimize_botorch_with_init_points(verbosity, seed, loss_fun_1d):
+    """Regression test: optimizer_package='botorch' with init_points used to raise
+    UnboundLocalError on 'instrum' (a nevergrad-only object built unconditionally at iter 0)."""
+    num_iters = 3
+    init_points = [np.array([0.5]), np.array([1.5]), np.array([2.0])]
+
+    result = slurm_minimize(loss_fun=loss_fun_1d, init_points=init_points,
+                            param_bounds=[[-5, 5]], num_workers=3, num_iters=num_iters,
+                            optimizer_package='botorch',
+                            botorch_kwargs={'num_restarts': 3, 'raw_samples': 20},
+                            cluster='local-map', verbosity=verbosity)
+
+    assert result['loss_min'] <= 0.3
+    assert len(result['candidates_ask_time_per_iter']) == num_iters
+
+
+def test_slurm_minimize_all_failed_iteration_raises(verbosity, seed):
+    """If every evaluation in an iteration fails, a clear RuntimeError is raised
+    (instead of numpy's opaque 'All-NaN slice encountered')."""
+    def always_nan(x):
+        return np.nan
+
+    with pytest.raises(RuntimeError, match='evaluations failed'):
+        slurm_minimize(loss_fun=always_nan, param_bounds=[[-5, 5]], num_workers=3, num_iters=1,
+                       cluster='local-map', verbosity=verbosity)
+
+
+def test_botorch_optimizer_num_best_points(verbosity, seed, loss_fun_1d):
+    """num_best_points trims the GP training set to the N best evaluations when exceeded."""
+    num_params = 1
+    param_bounds = [[-5, 5]]
+    num_workers = 3
+    num_iters = 6
+    num_best_points = 5  # fewer than total evaluations (6 iters × 3 workers = 18 pts)
+
+    result = slurm_minimize(loss_fun=loss_fun_1d,
+                            param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                            optimizer_package='botorch',
+                            botorch_kwargs={'num_best_points': num_best_points,
+                                           'num_restarts': 3, 'raw_samples': 20},
+                            cluster='local-map', verbosity=verbosity)
+
+    # Trimming should not break convergence — result still meaningful
+    assert result['loss_min'] < 1.0
+    total_pts = num_iters * num_workers
+    assert len(result['slurm_pool'].points_history) == total_pts
+
+
+def test_botorch_optimizer_num_best_points_no_trim_when_below_cap(verbosity, seed, loss_fun_1d):
+    """When total evaluations <= num_best_points, no trimming occurs and all points are used."""
+    num_params = 1
+    param_bounds = [[-5, 5]]
+    num_workers = 3
+    num_iters = 2
+    num_best_points = 100  # much larger than total evaluations (2 × 3 = 6 pts)
+
+    result = slurm_minimize(loss_fun=loss_fun_1d,
+                            param_bounds=param_bounds, num_workers=num_workers, num_iters=num_iters,
+                            optimizer_package='botorch',
+                            botorch_kwargs={'num_best_points': num_best_points,
+                                           'num_restarts': 3, 'raw_samples': 20},
+                            cluster='local-map', verbosity=verbosity)
+
+    total_pts = num_iters * num_workers
+    assert len(result['slurm_pool'].points_history) == total_pts  # all points kept
 

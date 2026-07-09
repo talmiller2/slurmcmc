@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slurmcmc"
+dynamic = ["version"]
+description = "Bayesian model calibration with parallel black-box queries on Slurm clusters"
+authors = [{name = "Tal Miller", email = "talmiller@gmail.com"}]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "submitit",
+    "nevergrad",
+    "emcee",
+    "numpy<2",  # torch<=2.2 is compiled against numpy 1.x; remove when torch supports numpy 2
+]
+
+[project.optional-dependencies]
+botorch = ["botorch", "torch"]
+test = [
+    "pytest",
+    "scipy",
+    "torch",
+    "botorch",
+    "corner",
+    "h5py",
+    "matplotlib",
+]
+examples = [
+    "matplotlib",
+    "corner",
+    "scipy",
+    "torch",
+    "botorch",
+    "h5py",
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "slurmcmc.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["slurmcmc*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

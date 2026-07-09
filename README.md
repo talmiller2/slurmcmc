@@ -1,50 +1,81 @@
 # slurmcmc
 
-Perform model calibration with uncertainty quantification (also known as Bayesian model calibration) for models that 
-require computationally expensive black-box queries, using parallel computing on a Slurm-managed cluster.
-Implemented by wrapping and stitching together [``submitit``](https://github.com/facebookincubator/submitit) + [``nevergrad``](https://github.com/facebookresearch/nevergrad) + [``botorch``](https://github.com/pytorch/botorch) + [``emcee``](https://github.com/dfm/emcee).
+Perform model calibration with uncertainty quantification (Bayesian model calibration) for computationally expensive black-box models, using parallel computing on a Slurm-managed cluster.
+
+Implemented by wrapping and stitching together [`submitit`](https://github.com/facebookincubator/submitit) + [`nevergrad`](https://github.com/facebookresearch/nevergrad) + [`botorch`](https://github.com/pytorch/botorch) + [`emcee`](https://github.com/dfm/emcee).
 
 <div align="center">
-    <img src="examples/docs/pics/logo.jpeg" alt="slurmcmc logo" width="700" height="auto">
+    <img src="examples/docs/pics/logo.jpeg" alt="slurmcmc logo">
 </div>
+
+---
+
+## Features
+
+- **Parallel black-box optimization** via [`nevergrad`](https://github.com/facebookresearch/nevergrad) (Differential Evolution, PSO, …) or Bayesian optimization via [`botorch`](https://github.com/pytorch/botorch) (Gaussian Process with Expected Improvement).
+- **Ensemble MCMC** via [`emcee`](https://github.com/dfm/emcee), with walkers evaluated in parallel on a cluster.
+- **MCMC with a surrogate model**: evaluate an expensive model to build a surrogate, then sample the surrogate cheaply.
+- **Full audit trail**: each function evaluation gets its own directory with `input.txt`, `output.txt`, and `inputs.txt`/`outputs.txt` per iteration.
+- **Restart/checkpoint support**: save and resume long runs from pickle files.
+- **Constraint handling**: skip infeasible points before evaluating the expensive function.
+- **Deferred function import**: pass a `{module_dir, module_name, function_name}` dict to avoid pickling issues with remotely-defined functions.
+
+---
+
+## Parallelization modes
+
+Set via the `cluster` argument:
+
+| `cluster` | Description |
+|---|---|
+| `'slurm'` | Submit jobs to a Slurm cluster via `submitit`. |
+| `'local'` | Run locally using `submitit`'s local executor (same directory layout as `'slurm'` — useful for debugging). |
+| `'local-map'` | Evaluate sequentially in-process. Fastest for analytic functions and CI tests. |
 
 ---
 
 ## Install
 
-Install prerequisites:
+Install the package (core dependencies are pulled in automatically):
 
-```
-pip install submitit nevergrad botorch emcee corner h5py
-```
-
-Install the package locally using either
-```
-pip install --user .
-python setup.py install --user
+```bash
+pip install -e .
 ```
 
-Run tests from root project folder using:
-```
-pytest -vv tests
+To also use the Bayesian optimization backend (botorch):
+
+```bash
+pip install -e ".[botorch]"
 ```
 
-To run a specific test, for example
+Or install everything needed for the examples or the tests:
+
+```bash
+pip install -e ".[examples]"
+pip install -e ".[test]"
 ```
-pytest -vv tests/test_map_local.py::test_slurmpool_localmap
-```
+
+Requires Python >= 3.10.
+
+> **On a shared Slurm cluster without admin/root access**, add `--user` to install into your
+> home directory instead of the system site-packages, e.g. `pip install -e . --user` or
+> `pip install -e ".[test]" --user`.
 
 ---
 
-## Parallelization
+## Run tests
 
-The algorithms used are based on parallel evaluations of functions, which we want to perform on Slurm-managed cluster.
-The run options determined by the  `cluster` argument whose options are:
-* `'slurm'`: parallel evaluations using jobs submitted to Slurm via [``submitit``](https://github.com/facebookincubator/submitit).
-* `'local'`: parallel evaluations using local processes, also via [``submitit``](https://github.com/facebookincubator/submitit) (on the same directories structure as in `'slurm'`, useful for debugging).
-* `'local-map'`: evaluate function in-line sequentially on multiple points. Useful for analytic functions where 
-parallelization is less important, for demonstrations and for debugging. 
-This mode is the one used in the examples below for quick evaluations.
+```bash
+pytest -vv tests
+```
+
+Tests that require a real Slurm cluster are automatically skipped locally (they are marked with `@pytest.mark.skipif(not is_slurm_cluster(), ...)`). The mock-Slurm tests (`tests/test_mock_slurm.py`) exercise the Slurm code path without a cluster.
+
+To run a specific test:
+
+```bash
+pytest -vv tests/test_map_local.py::test_slurmpool_localmap
+```
 
 ---
 

@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import functools
 import logging
 import signal
 import time
+from typing import Any, Callable, Dict, List, Literal, Optional, Union
 
 import emcee
 import numpy as np
@@ -10,30 +13,71 @@ import submitit
 from slurmcmc.general_utils import (set_logging, save_restart_file, load_restart_file, save_extra_arg_to_file,
                                     point_to_tuple, signal_handler)
 from slurmcmc.import_utils import deferred_import_function_wrapper
-from slurmcmc.slurm_utils import SlurmPool
+from slurmcmc.slurm_utils import Cluster, SlurmPool
 
 
-def slurm_mcmc(log_prob_fun, init_points, num_iters, init_log_prob_fun_values=None,
-               progress=False, skip_initial_state_check=True,
-               verbosity=1, slurm_vebosity=0, print_iter_interval=1, log_file=None, extra_arg=None,
-               save_restart=False, load_restart=False, restart_file='mcmc_restart.pkl', status_restart=None,
-               work_dir='mcmc', job_name='mcmc', cluster='slurm', submitit_kwargs=None, emcee_kwargs=None,
-               budget=int(1e6), job_fail_value=-1e10,
-               submit_retry_max_attempts=5, submit_retry_wait_seconds=10, submit_delay_seconds=0,
-               check_output_interval_seconds=1, check_output_timeout_minutes=int(1e5),
-               restart_save_interval=1, record_history=True,
-
-
-               # remote run params:
-               remote=False, remote_cluster='slurm', remote_submitit_kwargs=None,
-               ):
+def slurm_mcmc(
+        log_prob_fun: Union[Callable, Dict],
+        init_points: np.ndarray,
+        num_iters: int,
+        init_log_prob_fun_values: Optional[List[float]] = None,
+        progress: bool = False,
+        skip_initial_state_check: bool = True,
+        verbosity: int = 1,
+        slurm_verbosity: int = 0,
+        print_iter_interval: int = 1,
+        log_file: Optional[str] = None,
+        extra_arg: Any = None,
+        save_restart: bool = False,
+        load_restart: bool = False,
+        restart_file: str = 'mcmc_restart.pkl',
+        status_restart: Optional[Dict] = None,
+        work_dir: str = 'mcmc',
+        job_name: str = 'mcmc',
+        cluster: Cluster = 'slurm',
+        submitit_kwargs: Optional[Dict] = None,
+        emcee_kwargs: Optional[Dict] = None,
+        budget: int = int(1e6),
+        job_fail_value: float = -1e10,
+        submit_retry_max_attempts: int = 5,
+        submit_retry_wait_seconds: float = 10,
+        submit_delay_seconds: float = 0,
+        check_output_interval_seconds: float = 1,
+        check_output_timeout_minutes: float = int(1e5),
+        restart_save_interval: int = 1,
+        record_history: bool = True,
+        install_signal_handler: bool = True,
+        # remote run params:
+        remote: bool = False,
+        remote_cluster: Literal['slurm', 'local'] = 'slurm',
+        remote_submitit_kwargs: Optional[Dict] = None,
+):
     """
-    Combine submitit + emcee to allow ensemble mcmc on slurm.
-    The number of parallelizable evaluations in the default emcee "move" is len(init_points)/2,
-    except the first one on the init_points which is len(init_points).
+    Combine submitit + emcee to allow ensemble MCMC on a Slurm cluster.
+
+    The number of parallelisable walker evaluations per iteration is
+    ``len(init_points) // 2`` (the default emcee stretch-move); the very
+    first evaluation (on ``init_points``) uses all walkers.
+
+    Parameters
+    ----------
+    log_prob_fun : callable or dict
+        Log-probability function ``log_prob_fun(x)`` (or ``log_prob_fun(x, extra_arg)``
+        when *extra_arg* is given).  Can also be a dict with keys
+        ``module_dir``, ``module_name``, ``function_name`` for deferred import.
+    init_points : np.ndarray, shape (nwalkers, ndim)
+        Starting positions of the MCMC walkers.
+    num_iters : int
+        Number of MCMC iterations to run.
+    install_signal_handler : bool
+        If True (default), install a SIGTERM handler that exits with code 1
+        so Slurm marks the job as FAILED rather than COMPLETED on scancel.
+        Set to False if you are embedding this function in a larger application
+        that manages its own signal handling.
     """
     set_logging(work_dir, log_file)
-    signal.signal(signal.SIGTERM, signal_handler)  # force termination when canceling job on Slurm via scancel
+    if install_signal_handler:
+        signal.signal(signal.SIGTERM, signal_handler)
 
     if remote == True:
         print('Running slurm_mcmc remotely.')
@@ -74,7 +118,7 @@ def slurm_mcmc(log_prob_fun, init_points, num_iters, init_log_prob_fun_values=No
             time_per_iter = status['time_per_iter']
         else:
             # using extra_arg=None because emcee deals with extra_arg internally by wrapping the function
-            slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_vebosity, extra_arg=extra_arg,
+            slurm_pool = SlurmPool(work_dir, job_name, cluster, verbosity=slurm_verbosity, extra_arg=extra_arg,
                                    submitit_kwargs=submitit_kwargs, dim_input=init_points.shape[1], dim_output=1,
                                    budget=budget, job_fail_value=job_fail_value,
                                    submit_retry_max_attempts=submit_retry_max_attempts,
@@ -152,7 +196,7 @@ def get_gelman_rubin_statistic(chains):
     https://emcee.readthedocs.io/en/stable/tutorials/autocorr/
 
     Parameters:
-    chains: np.ndarray of shape (nwalkers, nsteps, ndim)
+    chains: np.ndarray of shape (nsteps, nwalkers, ndim)
         The MCMC samples from the emcee package.
 
     Returns:

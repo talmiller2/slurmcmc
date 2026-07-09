@@ -1,35 +1,15 @@
 import os
+import shutil
 
 import emcee
 import numpy as np
 import pytest
 from scipy.optimize import rosen
 
-from slurmcmc.general_utils import delete_directory, load_restart_file
-from slurmcmc.mcmc import slurm_mcmc, calculate_unique_points_weights
+from slurmcmc.general_utils import load_restart_file
+from slurmcmc.mcmc import slurm_mcmc, calculate_unique_points_weights, get_gelman_rubin_statistic
 from slurmcmc.slurm_utils import is_slurm_cluster
 from tests.submitit_defaults import submitit_kwargs
-
-
-@pytest.fixture()
-def work_dir(request):
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    work_dir = os.path.join(base_dir, f'test_work_dir_{request.node.name}')
-    os.makedirs(work_dir, exist_ok=True)
-    os.chdir(work_dir)
-    yield work_dir
-    os.chdir(base_dir)
-    delete_directory(work_dir)
-
-
-@pytest.fixture
-def seed():
-    np.random.seed(0)
-
-
-@pytest.fixture()
-def verbosity():
-    return 1
 
 
 def log_prob_fun(x):
@@ -50,7 +30,7 @@ def test_slurm_mcmc(verbosity, seed):
     minima = np.array([1, 1])
     init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
     status = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                        verbosity=verbosity, slurm_vebosity=verbosity,
+                        verbosity=verbosity, slurm_verbosity=verbosity,
                         cluster='local-map')
     samples = status['sampler'].get_chain(flat=True)
     samples = np.vstack([init_points, samples])  # init_points are not inherently included in the mcmc sampler samples
@@ -68,7 +48,7 @@ def test_slurm_mcmc_local(work_dir, verbosity, seed):
     minima = np.array([1, 1])
     init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
     status = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                        verbosity=verbosity, slurm_vebosity=verbosity,
+                        verbosity=verbosity, slurm_verbosity=verbosity,
                         work_dir=work_dir, cluster='local')
 
 
@@ -79,7 +59,7 @@ def test_slurm_mcmc_with_budget(verbosity, seed):
     minima = np.array([1, 1])
     init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
     status = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                        verbosity=verbosity, slurm_vebosity=verbosity,
+                        verbosity=verbosity, slurm_verbosity=verbosity,
                         cluster='local-map', budget=5)
     num_calculated_points = num_walkers * (num_iters + 1)
     np.testing.assert_equal(status['slurm_pool'].points_history.shape, (num_calculated_points, num_params))
@@ -93,7 +73,7 @@ def test_slurm_mcmc_with_log_file(work_dir, verbosity, seed):
     minima = np.array([1, 1])
     init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
     status = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                        verbosity=verbosity, slurm_vebosity=verbosity,
+                        verbosity=verbosity, slurm_verbosity=verbosity,
                         cluster='local-map',
                         work_dir=work_dir, log_file='log_file.txt')
 
@@ -120,7 +100,7 @@ def test_slurm_mcmc_with_restart_file(work_dir, verbosity, seed):
     init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
 
     status_1 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                          verbosity=verbosity, slurm_vebosity=verbosity,
+                          verbosity=verbosity, slurm_verbosity=verbosity,
                           cluster='local-map',
                           work_dir=work_dir, save_restart=True, load_restart=False)
 
@@ -132,7 +112,7 @@ def test_slurm_mcmc_with_restart_file(work_dir, verbosity, seed):
     assert restart_1['ini_iter'] == num_iters
 
     status_2 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                          verbosity=verbosity, slurm_vebosity=verbosity,
+                          verbosity=verbosity, slurm_verbosity=verbosity,
                           cluster='local-map',
                           work_dir=work_dir, save_restart=True, load_restart=True)
 
@@ -158,7 +138,7 @@ def test_slurm_mcmc_with_status_restart(work_dir, verbosity, seed):
     init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
 
     status_1 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                          verbosity=verbosity, slurm_vebosity=verbosity,
+                          verbosity=verbosity, slurm_verbosity=verbosity,
                           cluster='local-map',
                           work_dir=work_dir)
 
@@ -168,7 +148,7 @@ def test_slurm_mcmc_with_status_restart(work_dir, verbosity, seed):
     assert len(status_1['slurm_pool'].points_history) == total_num_points_calc
 
     status_2 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                          verbosity=verbosity, slurm_vebosity=verbosity,
+                          verbosity=verbosity, slurm_verbosity=verbosity,
                           cluster='local-map',
                           work_dir=work_dir, status_restart=status_1)
 
@@ -187,7 +167,7 @@ def test_slurm_mcmc_init_log_prob_fun_values(verbosity, seed):
     init_log_prob_fun_values = [log_prob_fun(point) for point in init_points]
     status = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
                         init_log_prob_fun_values=init_log_prob_fun_values,
-                        verbosity=verbosity, slurm_vebosity=verbosity,
+                        verbosity=verbosity, slurm_verbosity=verbosity,
                         cluster='local-map')
     samples = status['sampler'].get_chain(flat=True)
     num_calculated_points = num_walkers * num_iters  # the initial iteration was not calculated
@@ -204,7 +184,7 @@ def test_slurm_mcmc_with_extra_arg_localmap(verbosity, seed):
     init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
     status = slurm_mcmc(log_prob_fun=log_prob_fun_with_extra_arg, init_points=init_points, num_iters=num_iters,
                         extra_arg='sunny',
-                        verbosity=verbosity, slurm_vebosity=verbosity,
+                        verbosity=verbosity, slurm_verbosity=verbosity,
                         cluster='local-map')
 
 
@@ -216,9 +196,9 @@ def test_slurm_mcmc_with_extra_arg_local(work_dir, verbosity, seed):
     init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
     status = slurm_mcmc(log_prob_fun=log_prob_fun_with_extra_arg, init_points=init_points, num_iters=num_iters,
                         extra_arg='sunny',
-                        verbosity=verbosity, slurm_vebosity=verbosity,
+                        verbosity=verbosity, slurm_verbosity=verbosity,
                         work_dir=work_dir, cluster='local')
-    assert os.path.isfile(os.path.join(work_dir, 'extra_arg.txt')), 'extra_arg.txt does not appear.'
+    assert os.path.isfile(os.path.join(work_dir, 'extra_arg.pkl')), 'extra_arg.pkl does not appear.'
 
 
 def test_slurm_mcmc_init_log_prob_fun_values_with_extra_arg(verbosity, seed):
@@ -233,7 +213,7 @@ def test_slurm_mcmc_init_log_prob_fun_values_with_extra_arg(verbosity, seed):
     status = slurm_mcmc(log_prob_fun=log_prob_fun_with_extra_arg, init_points=init_points, num_iters=num_iters,
                         extra_arg=extra_arg,
                         init_log_prob_fun_values=init_log_prob_fun_values,
-                        verbosity=verbosity, slurm_vebosity=verbosity,
+                        verbosity=verbosity, slurm_verbosity=verbosity,
                         cluster='local-map')
 
 
@@ -245,7 +225,7 @@ def test_local_remote_slurm_mcmc(work_dir, verbosity, seed):
     init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
 
     job = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                     verbosity=verbosity, slurm_vebosity=verbosity,
+                     verbosity=verbosity, slurm_verbosity=verbosity,
                      work_dir=work_dir, cluster='local-map',
                      remote=True, remote_cluster='local')
 
@@ -267,7 +247,7 @@ def test_slurm_remote_slurm_mcmc(work_dir, verbosity, seed):
     init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
 
     job = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                     verbosity=verbosity, slurm_vebosity=verbosity,
+                     verbosity=verbosity, slurm_verbosity=verbosity,
                      work_dir=work_dir, cluster='local-map',
                      remote=True, remote_cluster='slurm', remote_submitit_kwargs=submitit_kwargs)
 
@@ -299,7 +279,7 @@ def test_slurm_mcmc_with_backend(work_dir, verbosity, seed):
     minima = np.array([1, 1])
     init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
     status = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                        verbosity=verbosity, slurm_vebosity=verbosity,
+                        verbosity=verbosity, slurm_verbosity=verbosity,
                         cluster='local-map',
                         work_dir=work_dir, emcee_kwargs={'backend': backend},
                         )
@@ -322,7 +302,7 @@ def test_local_remote_slurm_mcmc_with_backend(work_dir, verbosity, seed):
     init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
 
     job = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
-                     verbosity=verbosity, slurm_vebosity=verbosity,
+                     verbosity=verbosity, slurm_verbosity=verbosity,
                      work_dir=work_dir, cluster='local-map',
                      remote=True, remote_cluster='local',
                      emcee_kwargs={'backend': backend},
@@ -335,3 +315,56 @@ def test_local_remote_slurm_mcmc_with_backend(work_dir, verbosity, seed):
     np.testing.assert_equal(samples.shape, (num_calculated_points, num_params))
     np.testing.assert_equal(status['slurm_pool'].points_history.shape, (num_calculated_points, num_params))
     assert status['slurm_pool'].num_calls == 7
+
+
+def test_get_gelman_rubin_statistic(seed):
+    """GR statistic is ~1 for well-mixed chains and >1 for poorly-mixed chains."""
+    # Well-mixed chains: multiple chains sampling same distribution → R_hat ≈ 1
+    nsteps, nwalkers, ndim = 200, 8, 2
+    chains_good = np.random.randn(nsteps, nwalkers, ndim)
+    r_hat = get_gelman_rubin_statistic(chains_good)
+    assert r_hat.shape == (ndim,)
+    np.testing.assert_allclose(r_hat, np.ones(ndim), atol=0.3)
+
+    # Poorly-mixed: each walker stuck at a different value → R_hat >> 1
+    chains_bad = np.zeros((nsteps, nwalkers, ndim))
+    for w in range(nwalkers):
+        chains_bad[:, w, :] = float(w)  # each walker at a fixed distinct value
+    r_hat_bad = get_gelman_rubin_statistic(chains_bad)
+    assert np.all(r_hat_bad > 2.0)
+
+
+def test_slurm_mcmc_restart_equivalence(work_dir, verbosity, seed):
+    """Running N iters straight must yield the same sample count as N/2 + restart + N/2."""
+    num_params = 2
+    num_walkers = 10
+    num_iters_half = 2
+    minima = np.array([1, 1])
+    init_points = np.array([minima for _ in range(num_walkers)]) + 0.5 * np.random.randn(num_walkers, num_params)
+
+    # Run in one shot
+    status_full = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points,
+                              num_iters=num_iters_half * 2,
+                              verbosity=verbosity, slurm_verbosity=verbosity,
+                              cluster='local-map', work_dir=work_dir)
+
+    # Run first half, save, reload, run second half
+    restart_dir = work_dir + '_restart'
+    shutil.rmtree(restart_dir, ignore_errors=True)
+    np.random.seed(0)
+    status_half1 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points,
+                               num_iters=num_iters_half,
+                               verbosity=verbosity, slurm_verbosity=verbosity,
+                               cluster='local-map', work_dir=restart_dir,
+                               save_restart=True)
+    status_half2 = slurm_mcmc(log_prob_fun=log_prob_fun, init_points=init_points,
+                               num_iters=num_iters_half,
+                               verbosity=verbosity, slurm_verbosity=verbosity,
+                               cluster='local-map', work_dir=restart_dir,
+                               load_restart=True)
+    shutil.rmtree(restart_dir, ignore_errors=True)
+
+    # Both runs must cover the same total number of evaluations
+    total_points = num_walkers * (num_iters_half * 2 + 1)  # +1 for init
+    assert len(status_full['slurm_pool'].points_history) == total_points
+    assert len(status_half2['slurm_pool'].points_history) == total_points

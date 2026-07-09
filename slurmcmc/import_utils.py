@@ -27,17 +27,23 @@ def import_function_from_module(module_dir, module_name, function_name):
 class DeferredImportFunction:
     """
     A callable that defers importing a function until it's actually called.
+
+    The import is performed at most once per object instance and then cached.
+    Since pickling drops the cache (only the module/function names survive),
+    each unpickled copy — e.g. inside a remote Slurm job — re-imports fresh
+    definitions, while repeated local calls avoid re-import overhead.
     """
 
     def __init__(self, module_dir, module_name, function_name):
         self.module_dir = module_dir
         self.module_name = module_name
         self.function_name = function_name
+        self._cached_fun = None
 
     def __call__(self, *args, **kwargs):
-        # Import the function only when called
-        imported_fun = import_function_from_module(self.module_dir, self.module_name, self.function_name)
-        return imported_fun(*args, **kwargs)
+        if self._cached_fun is None:
+            self._cached_fun = import_function_from_module(self.module_dir, self.module_name, self.function_name)
+        return self._cached_fun(*args, **kwargs)
 
     def __getstate__(self):
         # Ensure only the attributes are pickled, not the imported function
@@ -48,34 +54,21 @@ class DeferredImportFunction:
         self.module_dir = state['module_dir']
         self.module_name = state['module_name']
         self.function_name = state['function_name']
+        self._cached_fun = None
 
 
 def deferred_import_function_wrapper(fun):
-    if callable(fun) == True:
+    if callable(fun):
         return fun
-    elif type(fun) == dict:
-        if 'module_dir' in fun.keys():
-            module_dir = fun['module_dir']
-        else:
-            err_msg = 'input is a dict, but does not contain module_dir key.'
-            logging.error(err_msg)
-            raise ValueError(err_msg)
-        if 'module_name' in fun.keys():
-            module_name = fun['module_name']
-        else:
-            err_msg = 'input is a dict, but does not contain module_name key.'
-            logging.error(err_msg)
-            raise ValueError(err_msg)
-        if 'function_name' in fun.keys():
-            function_name = fun['function_name']
-        else:
-            err_msg = 'input is a dict, but does not contain function_name key.'
-            logging.error(err_msg)
-            raise ValueError(err_msg)
+    elif isinstance(fun, dict):
+        for key in ('module_dir', 'module_name', 'function_name'):
+            if key not in fun:
+                err_msg = f'input is a dict, but does not contain {key} key.'
+                logging.error(err_msg)
+                raise ValueError(err_msg)
 
         # Return a deferred function object instead of importing immediately
-        deferred_import_function = DeferredImportFunction(module_dir, module_name, function_name)
-        return deferred_import_function
+        return DeferredImportFunction(fun['module_dir'], fun['module_name'], fun['function_name'])
     else:
         err_msg = f'input should be function or dictionary, type(fun)={type(fun)}'
         logging.error(err_msg)

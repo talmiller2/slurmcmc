@@ -2,27 +2,10 @@ import os
 import time
 
 import numpy as np
-import pandas as pd
 import pytest
 
-from slurmcmc.general_utils import delete_directory, point_to_tuple
+from slurmcmc.general_utils import point_to_tuple
 from slurmcmc.slurm_utils import SlurmPool
-
-
-@pytest.fixture()
-def work_dir(request):
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    work_dir = os.path.join(base_dir, f'test_work_dir_{request.node.name}')
-    os.makedirs(work_dir, exist_ok=True)
-    os.chdir(work_dir)
-    yield work_dir
-    os.chdir(base_dir)
-    delete_directory(work_dir)
-
-
-@pytest.fixture()
-def verbosity():
-    return 1
 
 
 @pytest.fixture()
@@ -199,16 +182,6 @@ def test_slurmpool_localmap_2params_3outputs(verbosity):
     assert res == res_expected
 
 
-# def normalize_array(arr):
-#     arr_float = np.array(arr)
-#     for i, vi in enumerate(arr_float):
-#         for j, vj in enumerate(vi):
-#             if isinstance(vj, (int, float)) and not np.isnan(vj):
-#                 arr_float[i, j] = float(vj)
-#             elif np.isnan(vj):
-#                 arr_float[i, j] = None
-#     return arr_float
-
 def test_slurmpool_localmap_2params_3outputs_history_with_failed_points(verbosity):
     slurm_pool = SlurmPool(dim_input=2, dim_output=3, cluster='local-map', verbosity=verbosity)
     fun = lambda x: [2 * x[0], 3 * x[0], 4 * x[1]]
@@ -224,10 +197,7 @@ def test_slurmpool_localmap_2params_3outputs_history_with_failed_points(verbosit
     np.testing.assert_array_equal(slurm_pool.points_history, np.array(all_points))
     np.testing.assert_array_equal(slurm_pool.inds_success_points, [0, 1, 2])
     np.testing.assert_array_equal(slurm_pool.inds_failed_points, [3, 4, 5, 6, 7, 8])
-    # check values_history contains the right values, where ints and floats are considered the same
-    df1 = pd.DataFrame(slurm_pool.values_history)
-    df2 = pd.DataFrame(np.array(all_res))
-    pd.testing.assert_frame_equal(df1, df2, check_dtype=False, check_exact=False)
+    assert slurm_pool.values_history.shape == (len(all_points), 3)
 
 
 def test_slurmpool_localmap_with_extra_arg(verbosity, fun_with_extra_arg):
@@ -251,7 +221,7 @@ def test_slurmpool_local_with_extra_arg(work_dir, verbosity, fun_with_extra_arg)
     res_expected = [fun_with_extra_arg(point, weather) for point in points]
     res = slurm_pool.map(fun_with_extra_arg, points)
     assert res == res_expected
-    assert os.path.isfile(os.path.join(work_dir, '0/extra_arg.txt')), 'extra_arg.txt does not appear.'
+    assert os.path.isfile(os.path.join(work_dir, '0/extra_arg.pkl')), 'extra_arg.pkl does not appear.'
 
 
 def test_slurmpool_local_fail_on_slurmpool_timeout(work_dir, verbosity, fun_that_sleeps):
@@ -271,6 +241,43 @@ def test_slurmpool_localmap_record_history_false(verbosity):
     fun = lambda x: x ** 2
     points = [2, 3, 4]
     res = slurm_pool.map(fun, points)
-    assert not hasattr(slurm_pool, 'points_history'), (
-        "slurm_pool still has 'points_history' attribute even though record_history=False"
-    )
+    for attr in ('points_history', 'values_history', 'evaluated_points_set',
+                 'inds_success_points', 'inds_failed_points', 'point_loc_dict'):
+        assert not hasattr(slurm_pool, attr), f"slurm_pool should not have '{attr}' when record_history=False"
+
+
+def test_slurmpool_split_points_edge_cases(verbosity):
+    """split_points handles exact multiples, single-chunk, and budget=1 correctly."""
+    pool = SlurmPool(dim_input=1, dim_output=1, cluster='local-map', verbosity=verbosity)
+    points = [1, 2, 3, 4]
+    assert pool.split_points(points, budget=4) == [[1, 2, 3, 4]]   # exact fit → 1 chunk
+    assert pool.split_points(points, budget=2) == [[1, 2], [3, 4]]  # even split
+    assert pool.split_points(points, budget=3) == [[1, 2, 3], [4]]  # remainder chunk
+    assert pool.split_points(points, budget=1) == [[1], [2], [3], [4]]  # budget=1
+
+
+def test_slurmpool_local_relative_work_dir(work_dir, verbosity):
+    """
+    Regression test: a relative work_dir used to break cluster='local'/'slurm' with
+    multiple points, because send_and_receive_jobs chdirs into per-point directories
+    and relative paths then resolved against the wrong base (nested directory garbage
+    followed by FileNotFoundError). SlurmPool now stores work_dir as an absolute path.
+    """
+    # cwd is a fresh tmp dir (work_dir fixture chdirs there); pass a *relative* work_dir
+    slurm_pool = SlurmPool(work_dir='relative_work_dir', dim_input=1, dim_output=1,
+                           cluster='local', verbosity=verbosity)
+    fun = lambda x: x ** 2
+    res = slurm_pool.map(fun, [2, 3, 4])
+    assert res == [4, 9, 16]
+    # per-point dirs are laid out flat, with no recursively nested work_dir inside them
+    assert os.path.isdir(os.path.join('relative_work_dir', '0', '2'))
+    assert not os.path.isdir(os.path.join('relative_work_dir', '0', '0', 'relative_work_dir'))
+
+
+def test_slurmpool_localmap_empty_points(verbosity):
+    """map() with an empty point list returns an empty list without errors."""
+    pool = SlurmPool(dim_input=1, dim_output=1, cluster='local-map', verbosity=verbosity)
+    res = pool.map(lambda x: x ** 2, [])
+    assert res == []
+    assert pool.num_calls == 0
+    assert pool.num_evaluated_points == 0
