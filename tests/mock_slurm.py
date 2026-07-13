@@ -61,13 +61,17 @@ class MockSlurmJob:
         Return a mock for subprocess.run that answers squeue queries using the job registry.
         Pass to monkeypatch.setattr(subprocess, 'run', MockSlurmJob.make_squeue_subprocess_run()).
         """
+        real_run = subprocess.run
+
         def mock_run(cmd, *args, **kwargs):
             if isinstance(cmd, list) and len(cmd) > 1 and cmd[0] == 'squeue':
                 job_id = cmd[2]
                 job = cls._registry.get(str(job_id))
                 stdout = job.get_squeue_state() if job is not None else ''
                 return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=stdout, stderr='')
-            raise RuntimeError(f"Unexpected subprocess call in mock: {cmd}")
+            # not a squeue query — pass through to the real subprocess.run so that
+            # unrelated library calls (e.g. lscpu via torch/threadpoolctl) still work
+            return real_run(cmd, *args, **kwargs)
         return mock_run
 
     @classmethod
@@ -79,8 +83,8 @@ class MockSlurmJob:
 
 class MockSlurmExecutor:
     """
-    Simulates submitit.AutoExecutor, creating MockSlurmJobs on submit().
-    Not used directly — use make_mock_executor_class() instead.
+    Simulates submitit.AutoExecutor, creating MockSlurmJobs on submit() or
+    map_array(). Not used directly — use make_mock_executor_class() instead.
     """
 
     def __init__(self, folder, cluster='slurm', outcome='success', state_sequence=None):
@@ -96,6 +100,12 @@ class MockSlurmExecutor:
     def submit(self, fun, *args):
         return MockSlurmJob(fun=fun, args=args, outcome=self._outcome,
                             state_sequence=self._state_sequence)
+
+    def map_array(self, fun, *iterables):
+        """Simulate a job-array submission: one MockSlurmJob per set of args."""
+        return [MockSlurmJob(fun=fun, args=args, outcome=self._outcome,
+                             state_sequence=self._state_sequence)
+                for args in zip(*iterables)]
 
 
 def make_mock_executor_class(outcome='success', state_sequence=None):

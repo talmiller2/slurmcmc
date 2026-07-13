@@ -159,8 +159,8 @@ def test_slurmpool_mock_slurm_submitit_kwargs_not_mutated(work_dir, verbosity, m
     assert original_kwargs['timeout_min'] == kwargs_before['timeout_min']
 
 
-def test_submit_with_retry_succeeds_after_transient_failures(work_dir, verbosity, monkeypatch):
-    """submit_with_retry retries on submit() exceptions and succeeds once stable."""
+def test_submit_array_with_retry_succeeds_after_transient_failures(work_dir, verbosity, monkeypatch):
+    """submit_array_with_retry retries on map_array() exceptions and succeeds once stable."""
     call_count = {'n': 0}
 
     class FlakyExecutor:
@@ -170,11 +170,12 @@ def test_submit_with_retry_succeeds_after_transient_failures(work_dir, verbosity
         def update_parameters(self, **kwargs):
             pass
 
-        def submit(self, fun, *args):
+        def map_array(self, fun, *iterables):
             call_count['n'] += 1
             if call_count['n'] < 3:
                 raise RuntimeError("Simulated transient submit failure")
-            return MockSlurmJob(fun=fun, args=args, state_sequence=['RUNNING', ''])
+            return [MockSlurmJob(fun=fun, args=args, state_sequence=['RUNNING', ''])
+                    for args in zip(*iterables)]
 
     monkeypatch.setattr(submitit, 'AutoExecutor', FlakyExecutor)
     monkeypatch.setattr(subprocess, 'run', MockSlurmJob.make_squeue_subprocess_run())
@@ -186,17 +187,17 @@ def test_submit_with_retry_succeeds_after_transient_failures(work_dir, verbosity
                      check_output_interval_seconds=0.01)
     res = pool.map(lambda x: x ** 2, [3])
     assert res == [9]
-    assert call_count['n'] == 3  # failed twice, succeeded on third
+    assert call_count['n'] == 3  # array submission failed twice, succeeded on third
 
 
-def test_submit_with_retry_exhausts_raises(work_dir, verbosity, monkeypatch):
-    """submit_with_retry raises after exhausting all attempts."""
+def test_submit_array_with_retry_exhausts_raises(work_dir, verbosity, monkeypatch):
+    """submit_array_with_retry raises after exhausting all attempts."""
     class AlwaysFailExecutor:
         def __init__(self, folder, cluster):
             pass
         def update_parameters(self, **kwargs):
             pass
-        def submit(self, fun, *args):
+        def map_array(self, fun, *iterables):
             raise RuntimeError("Always fails")
 
     monkeypatch.setattr(submitit, 'AutoExecutor', AlwaysFailExecutor)

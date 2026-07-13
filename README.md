@@ -34,6 +34,30 @@ Set via the `cluster` argument:
 
 ---
 
+## API
+
+The two entry points are `slurm_minimize(...)` and `slurm_mcmc(...)` (keyword-argument
+convenience wrappers). Under the hood each is a thin layer over a config dataclass and
+a runner class, which can also be used directly:
+
+```python
+from slurmcmc.optimization import MinimizeConfig, Minimizer
+from slurmcmc.mcmc import MCMCConfig, MCMCRunner
+
+result = Minimizer(MinimizeConfig(loss_fun=..., param_bounds=..., num_workers=..., num_iters=...)).run()
+status = MCMCRunner(MCMCConfig(log_prob_fun=..., init_points=..., num_iters=...)).run()
+```
+
+With `remote=True`, the whole optimization/MCMC loop is submitted as its own Slurm job
+(so it survives login-node limits) by pickling the config object into the driver job;
+the call returns a `submitit.Job` whose `.result()` is the status dict.
+
+Each iteration's points are submitted as a single Slurm **job array**
+(one scheduler transaction per iteration), and every point gets its own working
+directory with an `input.txt`/`output.txt` audit trail.
+
+---
+
 ## Install
 
 Install the package (core dependencies are pulled in automatically):

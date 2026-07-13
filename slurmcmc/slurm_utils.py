@@ -19,6 +19,26 @@ from slurmcmc.import_utils import deferred_import_function_wrapper
 Cluster = Literal["slurm", "local", "local-map"]
 
 
+def _run_in_dir(run_dir: str, fun: Callable, args: List):
+    """
+    Worker-side shim: chdir into the point's own directory, evaluate, chdir back.
+
+    Runs *inside* the submitit worker process, so the orchestrating process never
+    changes its own cwd (a historical source of subtle path bugs and a
+    thread-safety hazard). Module-level so it pickles by reference.
+    """
+    ini_dir = os.getcwd()
+    os.makedirs(run_dir, exist_ok=True)
+    os.chdir(run_dir)
+    try:
+        return fun(*args)
+    finally:
+        try:
+            os.chdir(ini_dir)
+        except OSError:
+            pass  # original dir vanished; worker is exiting anyway
+
+
 class SlurmPool:
     """
     A drop-in replacement for ``multiprocessing.Pool`` whose ``.map()`` method
@@ -35,7 +55,9 @@ class SlurmPool:
         Must be empty (no numeric sub-directories) when starting a fresh run.
         Relative paths are converted to absolute at construction time.
     job_name : str
-        Base name for submitted Slurm jobs.
+        Base name for submitted Slurm jobs. Each iteration is submitted as one
+        job array named ``{job_name}_{num_calls}`` (one scheduler transaction
+        per iteration; array task indices correspond to point indices).
     cluster : Cluster
         ``'slurm'`` — submit to a real Slurm cluster via submitit.
         ``'local'`` — run locally using submitit's local executor (same
@@ -67,7 +89,8 @@ class SlurmPool:
     submit_retry_wait_seconds : float
         Seconds to wait between submission retries.
     submit_delay_seconds : float
-        Optional delay between successive job submissions (rate-limiting).
+        Optional delay after each job-array submission (rate-limiting; with
+        arrays there is only one submission per iteration).
     check_output_interval_seconds : float
         How often to poll job state while waiting for results.
     check_output_timeout_minutes : float
@@ -227,21 +250,28 @@ class SlurmPool:
     def _combine_args(self, point: Any) -> List:
         return combine_args(point, self.extra_arg)
 
-    def submit_with_retry(self, fun: Callable, point: Any):
-        """Submit a single job, retrying up to submit_retry_max_attempts times on failure."""
+    def submit_array_with_retry(self, executor, fun: Callable, point_dirs: List[str],
+                                args_per_point: List[List]) -> List:
+        """
+        Submit the whole batch as a single job array (one scheduler transaction per
+        iteration instead of one per point), retrying up to submit_retry_max_attempts
+        times on failure. Each task runs through _run_in_dir so the worker starts in
+        its own point directory.
+        """
+        run_dirs = [os.path.abspath(d) for d in point_dirs]
+        funs = [fun] * len(run_dirs)
         attempts = 0
-        while attempts < self.submit_retry_max_attempts:
+        while True:
             try:
-                job = self.executor.submit(fun, *self._combine_args(point))
-                return job
+                return executor.map_array(_run_in_dir, run_dirs, funs, args_per_point)
             except Exception as e:
                 attempts += 1
                 logging.info(f"Submission failed: {e}. Retrying {attempts}/{self.submit_retry_max_attempts}")
+                if attempts >= self.submit_retry_max_attempts:
+                    err_msg = "max submit retry attempts reached."
+                    logging.error(err_msg)
+                    raise RuntimeError(err_msg)
                 time.sleep(self.submit_retry_wait_seconds)
-            if attempts == self.submit_retry_max_attempts:
-                err_msg = "max submit retry attempts reached."
-                logging.error(err_msg)
-                raise RuntimeError(err_msg)
 
     def map_chunk(self, fun: Callable, points: List) -> List:
         map_start_time = time.time()
@@ -300,8 +330,6 @@ class SlurmPool:
         return False
 
     def send_and_receive_jobs(self, fun: Callable, points: List) -> List:
-        ini_dir = os.getcwd()
-
         # prepare per-iteration and per-point directories
         iteration_dir = self.work_dir + '/' + str(self.num_calls)
         os.makedirs(iteration_dir, exist_ok=True)
@@ -319,19 +347,18 @@ class SlurmPool:
         if self.record_history:
             self._history.record_point_locations(points, self.num_calls)
 
-        # submit all jobs
-        jobs = []
-        for ind_point, (point, point_dir) in enumerate(zip(points, point_dirs)):
-            job_name = f'{self.job_name}_{self.num_calls}_{ind_point}'
-            submitit_kwargs_point = dict(self.submitit_kwargs)  # copy — don't mutate caller's dict
-            submitit_kwargs_point['slurm_job_name'] = job_name
-            self.executor = submitit.AutoExecutor(folder=point_dir, cluster=self.cluster)
-            self.executor.update_parameters(**submitit_kwargs_point)
-            os.chdir(point_dir)  # worker process starts in its own directory
-            job = self.submit_with_retry(fun, point)
-            jobs.append(job)
-            if self.submit_delay_seconds > 0:
-                time.sleep(self.submit_delay_seconds)
+        # submit the whole batch as one job array (workers chdir into their own
+        # point directory via the _run_in_dir shim — the orchestrator's cwd is
+        # never touched)
+        executor = submitit.AutoExecutor(folder=iteration_dir, cluster=self.cluster)
+        submitit_kwargs_iter = dict(self.submitit_kwargs)  # copy — don't mutate caller's dict
+        submitit_kwargs_iter['slurm_job_name'] = f'{self.job_name}_{self.num_calls}'
+        executor.update_parameters(**submitit_kwargs_iter)
+
+        args_per_point = [self._combine_args(point) for point in points]
+        jobs = self.submit_array_with_retry(executor, fun, point_dirs, args_per_point)
+        if self.submit_delay_seconds > 0:
+            time.sleep(self.submit_delay_seconds)
 
         # collect results
         outputs = []
@@ -369,9 +396,11 @@ class SlurmPool:
                                          + str(job.exception()))
                         job_failed = True
 
-            except Exception as e:
+            except Exception:
                 if self.verbosity >= 1:
-                    logging.info('Failed obtaining job result. Exception:\n' + str(e))
+                    # full traceback so transient infrastructure errors (squeue hiccups,
+                    # slow filesystems) are diagnosable, not silently folded into job failure
+                    logging.exception(f'Failed obtaining result of ind_point {ind_point}.')
                 job_failed = True
 
             if job_failed:
@@ -382,13 +411,29 @@ class SlurmPool:
             outputs.append(output)
 
         np.savetxt(iteration_dir + '/outputs.txt', np.array(outputs))
-        os.chdir(ini_dir)
         return outputs
 
 
 # ---------------------------------------------------------------------------
 # Cluster helpers
 # ---------------------------------------------------------------------------
+
+def submit_remote_run(run_fun: Callable, config, work_dir: str, job_name: str,
+                      remote_cluster: str, remote_submitit_kwargs: Optional[Dict]) -> submitit.Job:
+    """
+    Submit an orchestrator run (`run_fun(config)`) as its own Slurm/local job, so the
+    long-running optimization/MCMC loop lives on the cluster rather than the login node.
+
+    The entire run is described by a single picklable config dataclass — this replaces
+    the old pattern of re-submitting the calling function with `locals()`.
+    """
+    remote_kwargs = dict(remote_submitit_kwargs or {})
+    remote_kwargs.setdefault('slurm_job_name', 'main_' + job_name)
+    remote_kwargs.setdefault('timeout_min', int(60 * 24 * 30))  # 1 month
+    executor = submitit.AutoExecutor(folder=work_dir, cluster=remote_cluster)
+    executor.update_parameters(**remote_kwargs)
+    return executor.submit(run_fun, config)
+
 
 def is_slurm_cluster() -> bool:
     """Return True if running on a machine connected to a Slurm cluster."""
@@ -407,29 +452,41 @@ def check_job_state(job, cluster: Cluster) -> str:
         raise ValueError(err_msg)
 
 
-def check_slurm_job_state(job_id: Union[int, str]) -> str:
+def check_slurm_job_state(job_id: Union[int, str], num_attempts: int = 3,
+                          retry_wait_seconds: float = 2) -> str:
     """
     Query ``squeue`` for the state of the given Slurm job.
 
     Returns one of: ``'RUNNING'``, ``'PENDING'``, ``'NOT_FOUND'``, ``'OTHER'``.
-    """
-    try:
-        result = subprocess.run(
-            ['squeue', '-j', str(job_id), '-h', '-o', '%T'],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        output = result.stdout.strip()
-        if not output:
-            return "NOT_FOUND"
-        if output in ("RUNNING", "PENDING"):
-            return output
-        return "OTHER"  # COMPLETING, FAILED, etc.
 
-    except subprocess.CalledProcessError as e:
-        if "Invalid job id" in e.stderr:
-            return "NOT_FOUND"
-        err_msg = f"Error checking job status: {e}"
-        logging.error(err_msg)
-        raise ValueError(err_msg)
+    Transient squeue failures (e.g. a busy Slurm controller) are retried
+    num_attempts times before raising, so a momentary hiccup does not cause a
+    healthy job to be counted as failed.
+    """
+    last_error = None
+    for attempt in range(num_attempts):
+        try:
+            result = subprocess.run(
+                ['squeue', '-j', str(job_id), '-h', '-o', '%T'],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            output = result.stdout.strip()
+            if not output:
+                return "NOT_FOUND"
+            if output in ("RUNNING", "PENDING"):
+                return output
+            return "OTHER"  # COMPLETING, FAILED, etc.
+
+        except subprocess.CalledProcessError as e:
+            if e.stderr and "Invalid job id" in e.stderr:
+                return "NOT_FOUND"
+            last_error = e
+            logging.warning(f"squeue query failed (attempt {attempt + 1}/{num_attempts}): {e}")
+            if attempt < num_attempts - 1:
+                time.sleep(retry_wait_seconds)
+
+    err_msg = f"Error checking job status after {num_attempts} attempts: {last_error}"
+    logging.error(err_msg)
+    raise ValueError(err_msg)
