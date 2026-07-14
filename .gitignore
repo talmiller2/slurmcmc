@@ -25,7 +25,8 @@ htmlcov/
 mcmc/
 minimize/
 slurmpool/
-test_work_dir_*/
+mcmc_hybrid/
+tests/test_work_dirs/
 
 # Jupyter
 .ipynb_checkpoints/
