@@ -112,9 +112,10 @@ $\delta = 0.1$ means nothing moved by more than a tenth of a posterior width —
 the answer rather than about the chain. Two estimates of the *same* posterior still differ by
 chance, by roughly $\sqrt{1/\mathrm{ESS}_\mathrm{new} + 1/\mathrm{ESS}_\mathrm{old}}$ widths, where
 ESS is the chain's $N/\tau$ and "old" is the previous round's reported posterior. So the tolerance
-actually applied never drops below three times that:
+actually applied, written $\delta^*$ for `posterior_shift_tolerance`, never drops below three times
+that:
 
-$$\delta \le \max\left(\texttt{posterior\_shift\_tolerance},\ 3\sqrt{\frac{1}{\mathrm{ESS}_\mathrm{new}} + \frac{1}{\mathrm{ESS}_\mathrm{old}}}\right)$$
+$$\delta \le \max\left(\delta^*,\ 3\sqrt{\frac{1}{\mathrm{ESS}_\mathrm{new}} + \frac{1}{\mathrm{ESS}_\mathrm{old}}}\right)$$
 
 Without that noise floor a tolerance of 0.1 would be unreachable at realistic chain depths: at the
 ESS of 95–380 in the worked example, the floor alone is 0.23–0.42. The test needs two rounds, so
@@ -123,9 +124,12 @@ off.
 
 All three must hold simultaneously:
 
-$$\varepsilon \le \texttt{log\_error\_threshold},
-\qquad \mathrm{ESS}_w \ge \texttt{min\_ess\_weights},
-\qquad \delta \le \max\left(\texttt{posterior\_shift\_tolerance},\ \text{noise floor}\right)$$
+$$\varepsilon \le \varepsilon^*,
+\qquad \mathrm{ESS}_w \ge \mathrm{ESS}_w^*,
+\qquad \delta \le \max\left(\delta^*,\ \text{noise floor}\right)$$
+
+with $\varepsilon^*$ = `log_error_threshold`, $\mathrm{ESS}_w^*$ = `min_ess_weights` and
+$\delta^*$ = `posterior_shift_tolerance`.
 
 **What the test cannot see.** All of it is evaluated on points drawn from the *surrogate*
 posterior. It therefore detects a surrogate posterior that is too **broad**, and cannot detect
