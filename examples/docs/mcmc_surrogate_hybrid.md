@@ -65,9 +65,11 @@ the *same* surrogate can land on opposite sides of the threshold.
 On the validation points $\theta_i$, write the log-ratio and the self-normalised importance
 weights:
 
-$$d_i = \log p_\mathrm{exp}(\theta_i) - \log p_\mathrm{sur}(\theta_i),
+$$
+d_i = \log p_\mathrm{exp}(\theta_i) - \log p_\mathrm{sur}(\theta_i),
 \qquad w_i = e^{d_i},
-\qquad \tilde{w}_i = \frac{w_i}{\sum_j w_j}$$
+\qquad \tilde{w}_i = \frac{w_i}{\sum_j w_j}
+$$
 
 **Nats.** Every logarithm here is natural, and the unit of a log-probability is the *nat* — which
 is what `[nats]` means on the figures below. A difference of $\Delta$ nats in log-probability is a
@@ -81,8 +83,10 @@ scattered uniformly, $p_\mathrm{exp}$ alone would have been the correct weight.
 
 **Surrogate accuracy**, in nats:
 
-$$\bar{d} = \sum_i \tilde{w}_i d_i,
-\qquad \varepsilon = \sqrt{\sum_i \tilde{w}_i (d_i - \bar{d})^2}$$
+$$
+\bar{d} = \sum_i \tilde{w}_i d_i,
+\qquad \varepsilon = \sqrt{\sum_i \tilde{w}_i (d_i - \bar{d})^2}
+$$
 
 $\varepsilon = 0.05$ means probability ratios are accurate to about 5%. The mean $\bar{d}$ is
 subtracted because a log-probability is only defined up to a constant, so only the *spread* of
@@ -93,7 +97,9 @@ points, it is computed from those points alone and can be arbitrarily small — 
 a single dominating point — while the surrogate is in fact terrible. The number of validation
 points that effectively carry the weight is
 
-$$\mathrm{ESS}_w = \frac{\left(\sum_i w_i\right)^2}{\sum_i w_i^2} \in [1, N]$$
+$$
+\mathrm{ESS}_w = \frac{\left(\sum_i w_i\right)^2}{\sum_i w_i^2} \in [1, N]
+$$
 
 and a run is never declared converged while $\mathrm{ESS}_w <$ `min_ess_weights`.
 
@@ -106,16 +112,20 @@ questions: a perfect surrogate still leaves a drifting posterior if the cheap ch
 short. Between rounds, the change in each parameter's posterior mean $m_j$ and standard deviation
 $s_j$ is measured in units of that parameter's posterior width, and the largest is kept:
 
-$$\delta = \max_j \frac{\max\left(\left|m_j^\mathrm{new} - m_j^\mathrm{old}\right|,\ \left|s_j^\mathrm{new} - s_j^\mathrm{old}\right|\right)}{\tfrac12\left(s_j^\mathrm{new} + s_j^\mathrm{old}\right)}$$
+$$
+\delta = \max_j \frac{\max\left(\left|m_j^\mathrm{new} - m_j^\mathrm{old}\right|,\ \left|s_j^\mathrm{new} - s_j^\mathrm{old}\right|\right)}{\tfrac12\left(s_j^\mathrm{new} + s_j^\mathrm{old}\right)}
+$$
 
 $\delta = 0.1$ means nothing moved by more than a tenth of a posterior width — a statement about
 the answer rather than about the chain. Two estimates of the *same* posterior still differ by
 chance, by roughly $\sqrt{1/\mathrm{ESS}_\mathrm{new} + 1/\mathrm{ESS}_\mathrm{old}}$ widths, where
 ESS is the chain's $N/\tau$ and "old" is the previous round's reported posterior. So the tolerance
-actually applied, written $\delta^*$ for `posterior_shift_tolerance`, never drops below three times
-that:
+actually applied, written $\delta_{\max}$ for `posterior_shift_tolerance`, never drops below three
+times that:
 
-$$\delta \le \max\left(\delta^*,\ 3\sqrt{\frac{1}{\mathrm{ESS}_\mathrm{new}} + \frac{1}{\mathrm{ESS}_\mathrm{old}}}\right)$$
+$$
+\delta \le \max\left(\delta_{\max},\ 3\sqrt{\frac{1}{\mathrm{ESS}_\mathrm{new}} + \frac{1}{\mathrm{ESS}_\mathrm{old}}}\right)
+$$
 
 Without that noise floor a tolerance of 0.1 would be unreachable at realistic chain depths: at the
 ESS of 95–380 in the worked example, the floor alone is 0.23–0.42. The test needs two rounds, so
@@ -124,12 +134,14 @@ off.
 
 All three must hold simultaneously:
 
-$$\varepsilon \le \varepsilon^*,
-\qquad \mathrm{ESS}_w \ge \mathrm{ESS}_w^*,
-\qquad \delta \le \max\left(\delta^*,\ \text{noise floor}\right)$$
+$$
+\varepsilon \le \varepsilon_{\max},
+\qquad \mathrm{ESS}_w \ge \mathrm{ESS}_{w,\min},
+\qquad \delta \le \max\left(\delta_{\max},\ \text{noise floor}\right)
+$$
 
-with $\varepsilon^*$ = `log_error_threshold`, $\mathrm{ESS}_w^*$ = `min_ess_weights` and
-$\delta^*$ = `posterior_shift_tolerance`.
+with $\varepsilon_{\max}$ = `log_error_threshold`, $\delta_{\max}$ =
+`posterior_shift_tolerance`, and the weight floor `min_ess_weights`.
 
 **What the test cannot see.** All of it is evaluated on points drawn from the *surrogate*
 posterior. It therefore detects a surrogate posterior that is too **broad**, and cannot detect
@@ -438,9 +450,9 @@ Convergence:
 
 | argument | default | notes |
 |---|---|---|
-| `log_error_threshold` | `0.1` | ε\*, in nats. `0.05` ≈ 5% on probability ratios. Tighten to `0.01–0.02` for tail quantiles or Bayes factors; relax to `0.1` if only means and credible intervals matter. |
+| `log_error_threshold` | `0.1` | $\varepsilon_{\max}$, in nats. `0.05` ≈ 5% on probability ratios. Tighten to `0.01–0.02` for tail quantiles or Bayes factors; relax to `0.1` if only means and credible intervals matter. |
 | `min_ess_weights` | `10.0` | The degeneracy guard. Below this, $\varepsilon$ is computed from too few points to mean anything. |
-| `posterior_shift_tolerance` | `0.1` | δ\*, in posterior standard deviations. The tolerance applied is `max(δ*, noise floor)`, see *Posterior stability*. `None` disables. |
+| `posterior_shift_tolerance` | `0.1` | $\delta_{\max}$, in posterior standard deviations. The tolerance actually applied is the larger of it and the noise floor, see *Posterior stability*. `None` disables. |
 | `stall_relative_improvement`, `stall_window`, `stall_significance` | `0.05`, `12`, `0.05` | Tune the *warning* that refinement is not paying for itself, not convergence. ε scatters by a factor of ~2 between rounds, so this is a trend test over the whole history, phrased so that noise produces silence. Rarely worth changing. |
 
 Training data and cost — a fit grows as roughly `n^2.4` at these sizes (`O(n³)` asymptotically);

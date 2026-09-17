@@ -9,7 +9,7 @@ $$
 f(\mathbf{x}) = \sum_{i=1}^{d-1} \Bigl[ 100(x_{i+1} - x_i^2)^2 + (1 - x_i)^2 \Bigr]
 $$
 
-The analytic minima is known to be $f(\mathbf{x}_{min})=0$ in $\mathbf{x}_{min} = (1,\dots,1) \in \mathbb{R}^d$.
+The analytic minimum is known: $f(\mathbf{x}) = 0$ at $\mathbf{x} = (1,\dots,1) \in \mathbb{R}^d$.
 The chosen minimization domain is $\mathbf{x} \in [-10, 10]^d$.
 
 In all the optimization runs we will use ``num_workers=50`` for ``num_iters=50``.
