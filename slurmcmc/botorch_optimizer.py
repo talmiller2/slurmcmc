@@ -30,19 +30,13 @@ class BoTorchOptimizer:
     raw_samples : int
         Number of raw samples used to seed the acquisition-function optimization.
     num_best_points : int or None
-        If set, the GP is trained only on the num_best_points evaluations with
-        the lowest loss values.  Keeps GP fitting tractable for long runs
-        (GP training is O(n^3) in the number of points, so this matters once
-        the history reaches several hundred points).
+        If set, the GP is trained only on the num_best_points lowest-loss evaluations, which keeps
+        the O(n^3) fit tractable on long runs.
     options : dict or None
         Extra options forwarded to botorch's optimize_acqf.
     sequential : bool
-        If True (default), the q=num_workers batch candidates are selected by
-        greedy sequential optimization instead of a single joint optimization
-        over the q*d-dimensional space.  Joint optimization is the dominant
-        cost of botorch at moderate/large num_workers and blows up quickly;
-        sequential greedy is the standard botorch recommendation and gives a
-        large speedup (often 4-5x at num_workers~10) with equivalent quality.
+        If True (default), the batch is chosen greedily one point at a time rather than by a joint
+        optimization over q*d dimensions: much faster at equivalent quality.
     """
 
     def __init__(

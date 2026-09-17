@@ -1,0 +1,65 @@
+\chapter{Arguments shared by all entry points}
+\label{app:common}
+
+These arguments configure how evaluations are dispatched, recorded and resumed
+(\cref{ch:parallel}). They mean the same in \code{slurm_minimize}, \code{slurm_mcmc} and
+\code{slurm_mcmc_hybrid}; where the defaults differ, the table says so.
+
+\begin{argtable}
+  \code{cluster} & \code{'slurm'} & \code{'slurm'}, \code{'local'} or \code{'local-map'} \\
+  \code{work_dir} & per function & root of the audit trail, logs and restart file; \code{'minimize'}, \code{'mcmc'} and \code{'mcmc_hybrid'} \\
+  \code{job_name} & as \code{work_dir} & base name of the submitted job arrays \\
+  \code{submitit_kwargs} & \code{None} & scheduler options for submitit, e.g. \code{slurm_partition}, \code{timeout_min} \\
+  \code{extra_arg} & \code{None} & constant second argument, \code{fun(x, extra_arg)} \\
+  \code{job_fail_value} & per function & value recorded for a failed evaluation; NaN for minimization, $-10^{10}$ for MCMC \\
+  \code{verbosity} & \code{1} & logging: 0 silent, 1 per iteration, 2 more detail, 3 debug \\
+  \code{slurm_verbosity} & \code{0} & logging of the job submission layer, same levels \\
+  \code{log_file} & \code{None} & also write the log to \code{work_dir/log_file} \\
+  \code{save_restart}, \code{load_restart} & \code{False} & write, and resume from, the restart file \\
+  \code{restart_file} & per function & its name within \code{work_dir}; \code{'opt_restart.pkl'}, \code{'mcmc_restart.pkl'} and \code{'hybrid_restart.pkl'} \\
+  \code{keep_run_dirs} & \code{'all'} & per-call directories kept once their results are in: \code{'all'}, \code{'failed'} or \code{'none'} (\cref{sec:audit}) \\
+  \code{install_signal_handler} & \code{True} & make \code{scancel} end the run with an error code \\
+  \code{random_seed} & \code{None} & seed every random choice, so remote and resumed runs reproduce too (\cref{sec:seed}) \\
+  \code{remote} & \code{False} & submit the whole loop as its own job and return a submitit \code{Job} \\
+  \code{remote_cluster} & \code{'slurm'} & where that job runs: \code{'slurm'} or \code{'local'} \\
+  \code{remote_submitit_kwargs} & \code{None} & its scheduler options; a 30-day time limit by default \\
+\end{argtable}
+
+\code{slurm_minimize} and \code{slurm_mcmc} additionally expose the submission layer directly:
+
+\begin{argtable}
+  \code{budget} & $10^{6}$ & largest number of points in one job array; larger batches are split \\
+  \code{submit_retry_max_attempts} & \code{5} & retries of a failed submission \\
+  \code{submit_retry_wait_seconds} & \code{10} & wait between those retries \\
+  \code{submit_delay_seconds} & \code{0} & pause after each submission \\
+  \code{check_output_interval_seconds} & \code{1} & how often job states are polled \\
+  \code{check_output_timeout_minutes} & $10^{5}$ & running time after which a job is cancelled and counted as failed \\
+  \code{restart_save_interval} & \code{1} & iterations between restart-file writes \\
+\end{argtable}
+
+\chapter{Notation}
+\label{app:notation}
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l L@{}}
+  \toprule
+  \textbf{symbol} & \textbf{meaning} \\
+  \midrule
+  $\theta$, $d$                       & parameter vector, and its dimension (number of parameters) \\
+  $\log p(\theta)$                    & log-posterior, known up to an additive constant \\
+  $f(\theta)$, $c(\theta)$            & loss to be minimized, and constraint (feasible when $c \le 0$) \\
+  $\Nc$                               & number of walkers of an ensemble MCMC, each one chain \\
+  $\Lc$                               & number of iterations of each chain \\
+  $\tau$                              & integrated autocorrelation time; the largest over parameters when a single number is quoted \\
+  $\ESS = \Nc\Lc/\tau$                & effective sample size of a chain \\
+  $\pexp$, $\psur$                    & expensive and surrogate posterior densities \\
+  $d_i$, $w_i$                        & log-ratio $\log\pexp - \log\psur$ at a validation point, and its importance weight $e^{d_i}$ \\
+  $\varepsilon$                       & posterior-weighted RMS error of the surrogate log-probability, in nats \\
+  $\ESSw$                             & effective number of validation points carrying the importance weights \\
+  $\delta$                            & posterior shift between rounds, in posterior standard deviations \\
+  $\mu$, $\sigma$, $\kappa$           & surrogate prediction, its uncertainty, and the uncertainty penalty \\
+  $R$                                 & largest Mahalanobis radius of the training points (confinement envelope) \\
+  \bottomrule
+\end{tabularx}
+\end{center}

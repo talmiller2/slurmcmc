@@ -11,21 +11,16 @@ import nevergrad as ng
 import numpy as np
 import submitit
 
-from slurmcmc.general_utils import set_logging, save_restart_file, load_restart_file, combine_args, point_to_tuple, \
-    signal_handler
+from slurmcmc.general_utils import (set_logging, save_restart_file, load_restart_file, combine_args,
+                                    point_to_tuple, signal_handler, seed_random_generators,
+                                    get_random_state, set_random_state)
 from slurmcmc.import_utils import deferred_import_function_wrapper
-from slurmcmc.slurm_utils import Cluster, SlurmPool, submit_remote_run
+from slurmcmc.slurm_utils import Cluster, KeepRunDirs, SlurmPool, submit_remote_run
 
 
 @dataclass
 class MinimizeConfig:
-    """
-    Complete, picklable description of a slurm_minimize run.
-
-    This is the single source of truth for a run's parameters: `Minimizer`
-    consumes it, and remote mode pickles it into the driver Slurm job (instead
-    of the old, fragile `locals()` re-submission trick).
-    """
+    """Complete, picklable description of a slurm_minimize run; remote mode pickles it into the job."""
     loss_fun: Union[Callable, Dict]
     param_bounds: List
     num_workers: int
@@ -55,7 +50,10 @@ class MinimizeConfig:
     check_output_interval_seconds: float = 1
     check_output_timeout_minutes: float = int(1e5)
     restart_save_interval: int = 1
+    keep_run_dirs: KeepRunDirs = 'all'
     install_signal_handler: bool = True
+    # seeds every random choice, inside the process that runs the loop (so remote runs too)
+    random_seed: Optional[int] = None
     # remote run params:
     remote: bool = False
     remote_cluster: Literal['slurm', 'local'] = 'slurm'
@@ -149,6 +147,7 @@ class Minimizer:
                                     check_output_interval_seconds=cfg.check_output_interval_seconds,
                                     check_output_timeout_minutes=cfg.check_output_timeout_minutes,
                                     record_history=True,  # required in this implementation
+                                    keep_run_dirs=cfg.keep_run_dirs,
                                     )
 
     def _load_state(self) -> None:
@@ -167,11 +166,13 @@ class Minimizer:
         self.loc_point_min_per_iter = status['loc_point_min_per_iter']
         self.loc_point_min_all_iter = status['loc_point_min_all_iter']
         self.slurm_pool = status['slurm_pool']
+        self.slurm_pool.keep_run_dirs = cfg.keep_run_dirs  # the current setting, not the saved one
         self.ini_iter = status['ini_iter']
         self.num_loss_fun_calls_total = status['num_loss_fun_calls_total']
         self.num_constraint_fun_calls_total = status['num_constraint_fun_calls_total']
         self.num_asks_total = status['num_asks_total']
         self.candidates_ask_time_per_iter = status['candidates_ask_time_per_iter']
+        set_random_state(status.get('random_state'))
         self._status = status
 
     def _build_status(self, curr_iter: int) -> Dict:
@@ -285,6 +286,7 @@ class Minimizer:
         if cfg.constraint_fun is not None:
             self.constraint_fun = deferred_import_function_wrapper(cfg.constraint_fun)
 
+        seed_random_generators(cfg.random_seed, include_torch=(cfg.optimizer_package == 'botorch'))
         if cfg.load_restart:
             self._load_state()
         else:
@@ -344,7 +346,8 @@ class Minimizer:
             if cfg.save_restart and np.mod(curr_iter, cfg.restart_save_interval) == 0:
                 if cfg.verbosity >= 3:
                     logging.info('    saving restart file: ' + cfg.work_dir + '/' + cfg.restart_file)
-                save_restart_file(self._status, cfg.work_dir, cfg.restart_file)
+                save_restart_file({**self._status, 'random_state': get_random_state()},
+                                  cfg.work_dir, cfg.restart_file)
 
         if cfg.verbosity >= 1:
             logging.info(f'### opt loop done. x_min: {self.x_min}, loss_min: {self.loss_min}')
@@ -387,28 +390,37 @@ def slurm_minimize(
         check_output_interval_seconds: float = 1,
         check_output_timeout_minutes: float = int(1e5),
         restart_save_interval: int = 1,
+        keep_run_dirs: KeepRunDirs = 'all',
         install_signal_handler: bool = True,
+        random_seed: Optional[int] = None,
         # remote run params:
         remote: bool = False,
         remote_cluster: Literal['slurm', 'local'] = 'slurm',
         remote_submitit_kwargs: Optional[Dict] = None,
 ) -> Union[Dict, submitit.Job]:
     """
-    Combine submitit + nevergrad + botorch to allow parallel optimization on slurm.
-    has capability to keep drawing points using optimizer.ask() until num_workers points are found, that were not
-    already calculated previously, and that pass constraint_fun. This prevents wasting compute on irrelevant points.
-    Default optimizer is nevergrad's implementation for DifferentialEvolution.
+    Parallel black-box minimization on a Slurm cluster, with nevergrad (Differential Evolution by
+    default) or botorch. Each iteration asks the optimizer until num_workers points are found that
+    are new and pass constraint_fun, so no compute is spent on duplicates or infeasible points.
 
     This is a thin convenience wrapper around MinimizeConfig + Minimizer; use those
     directly for programmatic access to the run's configuration and state.
 
     Parameters
     ----------
+    keep_run_dirs : 'all' | 'failed' | 'none'
+        What to keep of each batch's directory under work_dir once its results are in: 'all'
+        (default) keeps everything, for investigating crashes or re-using the points' own output
+        files; 'failed' keeps only batches with a failed evaluation; 'none' removes them all.
+        Every point and result is appended to points_history.txt / values_history.txt either way.
     install_signal_handler : bool
         If True (default), install a SIGTERM handler that exits with code 1
         so Slurm marks the job as FAILED rather than COMPLETED on scancel.
         Set to False if you are embedding this function in a larger application
         that manages its own signal handling.
+    random_seed : int or None
+        Seed for every random choice of the run, applied inside the process that runs the loop,
+        so remote runs are reproducible too; restart files store the generator state.
     remote : bool
         If True, submit the whole optimization loop as its own job on
         remote_cluster and return the submitit Job handle immediately
@@ -428,8 +440,8 @@ def slurm_minimize(
         submit_delay_seconds=submit_delay_seconds,
         check_output_interval_seconds=check_output_interval_seconds,
         check_output_timeout_minutes=check_output_timeout_minutes,
-        restart_save_interval=restart_save_interval,
-        install_signal_handler=install_signal_handler,
+        restart_save_interval=restart_save_interval, keep_run_dirs=keep_run_dirs,
+        install_signal_handler=install_signal_handler, random_seed=random_seed,
         remote=remote, remote_cluster=remote_cluster, remote_submitit_kwargs=remote_submitit_kwargs,
     )
 

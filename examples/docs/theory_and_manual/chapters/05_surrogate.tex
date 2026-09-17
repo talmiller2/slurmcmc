@@ -1,0 +1,94 @@
+\chapter{MCMC with a surrogate model}
+\label{ch:surrogate}
+
+\section{The idea}
+
+MCMC needs many evaluations --- tens of thousands even in the small examples of \cref{ch:mcmc}.
+When each one is an expensive simulation, that can be out of reach even on a cluster. The
+alternative is to train a fast \emph{surrogate} (or emulator) of the log-probability on a modest
+number of expensive evaluations, and to run the MCMC on the surrogate instead. Once a fast surrogate
+exists, the MCMC no longer needs a cluster, or this package: it can be run with any MCMC library,
+such as \texttt{emcee} or \texttt{pymc}.
+
+The difficulty is where to put the training data. Sampling the parameter space at random, over a
+domain wide enough to be safe, spreads the evaluations thinly. Standard checks of the surrogate,
+such as cross-validation on held-out points, then measure its accuracy \emph{on average over that
+domain} --- while what matters is its accuracy on the posterior, a region not known in advance and
+typically a small fraction of the domain.
+
+This is where a short expensive MCMC is useful even when a full one is unaffordable: its walkers
+generate training data exactly where the posterior is. A surrogate-based calibration therefore
+proceeds in five steps:
+
+\begin{enumerate}[leftmargin=*, label=\textbf{\arabic*.}]
+  \item Start a parallel MCMC with the expensive function.
+  \item Run it long enough to generate relevant training data.
+  \item Train a fast surrogate on the evaluations, and test its accuracy.
+  \item Run the MCMC on the surrogate; no cluster is needed any more.
+  \item Validate the resulting posterior against the expensive function, with importance sampling.
+\end{enumerate}
+
+\section{Validating with importance weights}
+\label{sec:importance}
+
+The surrogate posterior $\psur$ can be checked directly against the expensive one, $\pexp$. Draw
+points $\theta_i$ from the surrogate-based MCMC samples, evaluate the expensive function there, and
+form the ratios
+\begin{equation}
+  w_i = \frac{\pexp(\theta_i)}{\psur(\theta_i)} = \exp\!\big(\log\pexp(\theta_i) - \log\psur(\theta_i)\big),
+  \label{eq:importance-weights}
+\end{equation}
+the \textbf{importance weights}. Where the surrogate is exact every ratio is the same constant;
+their spread measures the surrogate's error, precisely on the points where the posterior has mass.
+The weights also correct the surrogate-based estimate: an expectation under the expensive posterior
+is the weighted average over the surrogate samples,
+\begin{equation}
+  \mathbb{E}_{\pexp}[h(\theta)] \;\approx\; \frac{\sum_i w_i\, h(\theta_i)}{\sum_i w_i},
+\end{equation}
+self-normalised so that the unknown constants of both densities cancel.
+
+\section{Example: a surrogate for the 2D Rosenbrock}
+\label{sec:surrogate-example}
+
+The target is again the constrained 2D Rosenbrock of \cref{sec:mcmc-example}, standing in for an
+expensive function. A short expensive MCMC runs with $\Nc = 10$ walkers for $\Lc = 2000$ iterations
+--- not converged, which is not the point here. A Gaussian-process surrogate of the log-probability
+is then trained on 400 distinct points from that run, plus 200 random points inside the constraint
+circle, which regularize the surrogate away from the chains.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{example_mcmc_surrogate_2d_visualization.png}
+  \caption{The expensive and the surrogate log-probabilities (logarithm of the absolute value),
+           with the training points in red. The training data concentrate where they are needed.}
+\end{figure}
+
+The MCMC is then rerun, with the same settings, on the surrogate:
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.5\linewidth]{example_mcmc_surrogate_parameters_distribution.png}
+  \caption{The posterior from the expensive MCMC and from the surrogate-based MCMC, after burn-in.
+           They are similar, but not identical.}
+\end{figure}
+
+For validation, 1000 points are drawn from the surrogate-based samples and evaluated with the
+expensive function:
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.42\linewidth]{example_mcmc_surrogate_importance_weights.png}
+  \caption{The ratio of expensive to surrogate probabilities, the importance weights of
+           \cref{eq:importance-weights}, on 1000 surrogate-posterior points.}
+\end{figure}
+
+The ratios are close to 1, to within about 1\%, which validates the surrogate for this problem ---
+and the weights could now be used to correct predictions made from the surrogate-based samples.
+
+\begin{keypoint}[From a manual procedure to an automated one]
+Every step above required a judgement: how long to run the expensive MCMC, how many regularization
+points to add, whether the surrogate is accurate enough, and what to do if it is not. The hybrid
+pipeline of \cref{ch:hybrid} iterates the procedure, measures its accuracy on the posterior after
+each iteration, recycles the validation evaluations as new training data, and stops when measured
+criteria are met.
+\end{keypoint}

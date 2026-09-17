@@ -1,12 +1,6 @@
 """
-History — evaluation-history tracking for SlurmPool.
-
-Decoupled from SlurmPool so that history data can be inspected, serialised,
-and reasoned about independently of the pool's job-submission machinery.
-
-SlurmPool exposes every attribute here as a read-only @property for full
-backward compatibility (existing code using slurm_pool.points_history etc.
-continues to work unchanged).
+History -- evaluation-history tracking for SlurmPool, which exposes every attribute here as a
+read-only property (slurm_pool.points_history etc.).
 """
 
 from __future__ import annotations

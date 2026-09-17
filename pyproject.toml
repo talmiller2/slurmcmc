@@ -18,6 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 botorch = ["botorch", "torch"]
+hybrid = ["scikit-learn"]
 test = [
     "pytest",
     "scipy",
@@ -26,6 +27,7 @@ test = [
     "corner",
     "h5py",
     "matplotlib",
+    "scikit-learn",
 ]
 examples = [
     "matplotlib",
@@ -34,6 +36,7 @@ examples = [
     "torch",
     "botorch",
     "h5py",
+    "scikit-learn",
 ]
 
 [tool.setuptools.dynamic]

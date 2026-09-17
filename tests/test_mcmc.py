@@ -368,3 +368,52 @@ def test_slurm_mcmc_restart_equivalence(work_dir, verbosity, seed):
     total_points = num_walkers * (num_iters_half * 2 + 1)  # +1 for init
     assert len(status_full['slurm_pool'].points_history) == total_points
     assert len(status_half2['slurm_pool'].points_history) == total_points
+
+
+def _log_prob_rosen(x):
+    """Module-level, so a restart file can pickle the sampler that holds it."""
+    return -rosen(x)
+
+
+def test_random_seed_makes_slurm_mcmc_reproducible_and_restarts_continue_the_stream(work_dir):
+    """
+    The seed is applied inside the run, so it holds wherever the loop executes, and the restart
+    file carries the generator state, so a chain that was interrupted and resumed is the chain
+    that was never interrupted.
+    """
+    init_points = np.random.default_rng(1).uniform(-2, 2, (8, 2))
+    settings = dict(log_prob_fun=_log_prob_rosen, init_points=init_points, cluster='local-map', verbosity=0)
+
+    def chain(random_seed, **kwargs):
+        return slurm_mcmc(random_seed=random_seed, **settings, **kwargs)['sampler'].get_chain()
+
+    full = chain(3, num_iters=40, work_dir='full')
+    np.random.rand(10)                      # what the global generator did in between must not matter
+    assert np.array_equal(full, chain(3, num_iters=40, work_dir='again'))
+    assert not np.array_equal(full, chain(4, num_iters=40, work_dir='other'))
+
+    chain(3, num_iters=20, work_dir='resumed', save_restart=True)
+    np.random.rand(10)
+    resumed = chain(3, num_iters=20, work_dir='resumed', load_restart=True, save_restart=True)
+    assert np.array_equal(full, resumed)
+
+
+def test_random_seed_must_be_a_valid_integer():
+    with pytest.raises(ValueError, match='random_seed'):
+        slurm_mcmc(log_prob_fun=_log_prob_rosen, init_points=np.zeros((8, 2)), num_iters=1,
+                   cluster='local-map', verbosity=0, random_seed=-1)
+
+
+def test_keep_run_dirs_none_leaves_only_the_history_files(work_dir):
+    """slurm_mcmc hands keep_run_dirs to its pool; a restart applies the current setting."""
+    init_points = np.random.default_rng(0).normal(size=(4, 2))
+    settings = dict(log_prob_fun=_log_prob_rosen, init_points=init_points, cluster='local', verbosity=0,
+                    work_dir=work_dir, save_restart=True)
+    call_dirs = lambda: sorted(d for d in os.listdir(work_dir) if d.isdigit())
+    # one call on all walkers, then two calls on half the ensemble per iteration
+    slurm_mcmc(num_iters=1, keep_run_dirs='all', **settings)
+    assert call_dirs() == ['0', '1', '2']
+    status = slurm_mcmc(num_iters=2, keep_run_dirs='none', load_restart=True, **settings)
+    assert status['slurm_pool'].num_calls > 3
+    assert call_dirs() == ['0', '1', '2']  # the calls after the restart were removed
+    assert len(np.loadtxt(os.path.join(work_dir, 'points_history.txt'))) == status['slurm_pool'].num_evaluated_points

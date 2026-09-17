@@ -1,0 +1,136 @@
+\chapter{Introduction}
+\label{ch:intro}
+
+\section{Bayesian model calibration}
+
+A physical model predicts observations $y$ from a vector of parameters $\theta \in \R^d$.
+\emph{Calibrating} the model means answering two questions: which parameters make it agree with
+the data, and how well the data actually pin those parameters down. Bayesian model calibration
+answers both at once, with the posterior distribution
+\begin{equation}
+  p(\theta \mid y) \;\propto\; \mathcal{L}(y \mid \theta)\,\pi(\theta),
+  \label{eq:bayes}
+\end{equation}
+the likelihood of the data under the model, times a prior. In practice one works with its
+logarithm,
+\begin{equation}
+  \log p(\theta) \;=\; \log \mathcal{L}(y \mid \theta) + \log \pi(\theta) + \text{const},
+  \label{eq:logpost}
+\end{equation}
+which is only ever known up to that additive constant. The constant does not matter: the
+posterior is unchanged by $\log p \to \log p + c$, and every algorithm in this manual is built so
+that it never needs it.
+
+The obstacle is cost. Each evaluation of $\log p$ runs the forward model --- a simulation that can
+take minutes or hours --- and the algorithms that explore a posterior need thousands to millions of
+evaluations. \textbf{slurmcmc} makes this tractable on a Slurm cluster in three ways: it evaluates
+as many parameter points \emph{simultaneously} as an algorithm allows; it keeps a complete,
+restartable record of every evaluation, so no expensive work is ever repeated; and, when even that
+is not enough, it replaces most evaluations with a fast surrogate model while measuring whether the
+surrogate can be trusted.
+
+\section{The workflow}
+
+A calibration typically goes through three stages, which is also how this manual is organised.
+
+\begin{enumerate}[leftmargin=*, label=\textbf{\arabic*.}]
+  \item \textbf{Optimization} (\cref{ch:optimization}). Minimize a loss that measures the misfit
+        to data. This checks that the model \emph{can} represent the data at all, before any
+        effort is spent on uncertainty, and it finds the region where the posterior lives, which
+        is where MCMC should start.
+  \item \textbf{MCMC} (\cref{ch:mcmc}). Sample the posterior with an ensemble Markov chain Monte
+        Carlo algorithm whose walkers are evaluated in parallel on the cluster.
+  \item \textbf{Surrogate-based MCMC} (\cref{ch:surrogate,ch:hybrid}). When a full MCMC is
+        unaffordable, fit a fast surrogate to a limited number of expensive evaluations and sample
+        the surrogate instead. The automated \emph{hybrid} pipeline iterates this until measured
+        criteria say the surrogate posterior can be trusted.
+\end{enumerate}
+
+All three share the same machinery for dispatching evaluations to the cluster, recording them,
+and restarting interrupted runs. \Cref{ch:parallel} describes it once, so the later chapters can
+concentrate on the algorithms.
+
+\section{What the package is built on}
+
+slurmcmc stitches together established libraries rather than re-implementing them:
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l L@{}}
+  \toprule
+  \textbf{library} & \textbf{role in slurmcmc} \\
+  \midrule
+  \href{https://github.com/facebookincubator/submitit}{\texttt{submitit}} &
+    submits evaluations as Slurm job arrays (or local processes) and collects their results \\
+  \href{https://github.com/facebookresearch/nevergrad}{\texttt{nevergrad}} &
+    gradient-free population optimizers: Differential Evolution, Particle Swarm, and others \\
+  \href{https://github.com/pytorch/botorch}{\texttt{botorch}} &
+    Bayesian optimization with a Gaussian-process model \\
+  \href{https://github.com/dfm/emcee}{\texttt{emcee}} &
+    the affine-invariant ensemble MCMC sampler \\
+  \href{https://scikit-learn.org}{\texttt{scikit-learn}} &
+    the Gaussian-process and polynomial surrogate models of the hybrid pipeline \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+and exposes four entry points:
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l l L@{}}
+  \toprule
+  \textbf{entry point} & \textbf{module} & \textbf{purpose} \\
+  \midrule
+  \code{slurm_minimize}    & \code{slurmcmc.optimization} & parallel minimization of a loss (\cref{ch:optimization}) \\
+  \code{slurm_mcmc}        & \code{slurmcmc.mcmc}         & ensemble MCMC with walkers evaluated on the cluster (\cref{ch:mcmc}) \\
+  \code{slurm_mcmc_hybrid} & \code{slurmcmc.hybrid}       & automated surrogate-based MCMC (\cref{ch:hybrid}) \\
+  \code{SlurmPool}         & \code{slurmcmc.slurm_utils}  & a cluster-backed \code{map}, used by all of the above and usable on its own (\cref{ch:parallel}) \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Installation}
+
+Install the package from the repository root; its core dependencies are pulled in automatically:
+\begin{lstlisting}[style=plain]
+pip install -e .
+\end{lstlisting}
+Bayesian optimization needs the \code{botorch} extra and the hybrid pipeline the \code{hybrid}
+extra (scikit-learn). The \code{examples} and \code{test} extras add what the example scripts and
+the test suite need. To install everything at once:
+\begin{lstlisting}[style=plain]
+pip install -e ".[botorch,hybrid,examples,test]"
+\end{lstlisting}
+Python~3.10 or newer is required. On a shared cluster without administrator rights, add
+\code{--user} to install into your home directory.
+
+\section{Running the tests}
+
+\begin{lstlisting}[style=plain]
+pytest -vv tests
+\end{lstlisting}
+Tests that need a real Slurm cluster are skipped automatically elsewhere; a mock-Slurm test file
+exercises the Slurm code path without one.
+
+\section{The examples behind this manual}
+
+Every figure in this manual is produced by one of the example scripts in the \code{examples}
+directory, so every result shown can be reproduced, and each script doubles as a starting point for
+a real problem.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l L@{}}
+  \toprule
+  \textbf{script} & \textbf{shown in} \\
+  \midrule
+  \code{example_optimization.py}                   & \cref{sec:opt-example} \\
+  \code{example_optimization_algorithms_comparison.py} & \cref{sec:opt-comparison} \\
+  \code{example_mcmc.py}                           & \cref{sec:mcmc-example} \\
+  \code{example_mcmc_and_mc_comparison.py}         & \cref{sec:mcmc-vs-mc} \\
+  \code{example_mcmc_surrogate.py}                 & \cref{sec:surrogate-example} \\
+  \code{example_mcmc_hybrid.py}                    & \cref{sec:hybrid-example} \\
+  \bottomrule
+\end{tabularx}
+\end{center}

@@ -1,0 +1,263 @@
+\chapter{Evaluating an expensive function in parallel}
+\label{ch:parallel}
+
+Every algorithm in the package needs the same service: evaluate a function at a batch of points,
+as many at once as the cluster allows, and never lose or repeat an evaluation. This chapter
+describes that shared layer. The arguments introduced here behave identically in
+\code{slurm_minimize}, \code{slurm_mcmc} and \code{slurm_mcmc_hybrid}; \cref{app:common} collects
+them in one table.
+
+\section{The function you supply}
+
+The expensive function takes a parameter vector --- a NumPy array of length $d$ --- and returns a
+single number: a loss to be minimized (\cref{ch:optimization}), or a log-probability to be sampled
+(\cref{ch:mcmc,ch:surrogate,ch:hybrid}), known up to a constant.
+
+\begin{lstlisting}
+def log_prob(theta):
+    write_simulation_input(theta)      # e.g. a namelist for the forward code
+    run_simulation()                   # minutes to hours
+    return -0.5 * chi_squared(read_simulation_output())
+\end{lstlisting}
+
+Three facilities make real forward models easy to plug in.
+
+\textbf{Its own working directory.} On the cluster each evaluation runs with its current directory
+set to a directory of its own (\cref{sec:audit}), so the function can write input files, launch an
+external code and parse its output without evaluations interfering with each other --- and every
+file it writes stays behind as a record.
+
+\textbf{A constant extra argument.} Anything the function needs besides $\theta$ --- the data, a
+configuration dictionary, a path --- can be passed once as \code{extra_arg}. The function is then
+called as \code{fun(theta, extra_arg)}.
+
+\textbf{Deferred import.} A function has to be pickled to be sent to a compute node, and functions
+defined in a script or notebook often cannot be. Instead of the function, pass where to find it:
+\begin{lstlisting}
+log_prob_fun = {'module_dir': '/home/me/model',
+                'module_name': 'my_model',
+                'function_name': 'log_prob'}
+\end{lstlisting}
+Only the three names are pickled. The function is imported inside each job, and re-imported fresh
+there, so edits to the module are picked up by later evaluations. The same form is accepted for
+\code{constraint_fun}.
+
+\section{SlurmPool: one job array per batch}
+\label{sec:slurmpool}
+
+\code{SlurmPool} provides a single method, \code{map(fun, points)}, that returns the function's
+value at each point, in order. It is a drop-in replacement for the \code{map} of
+\code{multiprocessing.Pool} --- which is exactly how \code{emcee} uses it to evaluate its walkers.
+
+Each call to \code{map} is submitted as \textbf{one Slurm job array}, named
+\code{<job_name>_<call number>}, whose task $k$ evaluates point $k$. An iteration of an optimizer or
+of MCMC is therefore a single scheduler transaction, however many points it contains. Batches larger
+than \code{budget} points are split into consecutive arrays of at most that size.
+
+\code{SlurmPool} can also be used on its own, for instance for a parameter scan:
+\begin{lstlisting}
+from slurmcmc.slurm_utils import SlurmPool
+
+pool = SlurmPool(work_dir='scan', job_name='scan', cluster='slurm',
+                 dim_input=3, dim_output=1,
+                 submitit_kwargs={'slurm_partition': 'compute', 'timeout_min': 60})
+values = pool.map(log_prob, points)
+\end{lstlisting}
+
+\section{Where the evaluations run}
+
+The \code{cluster} argument selects the execution backend:
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l L@{}}
+  \toprule
+  \code{cluster} & \textbf{behaviour} \\
+  \midrule
+  \code{'slurm'}     & submit job arrays to a Slurm cluster through submitit \\
+  \code{'local'}     & run as local processes through submitit's local executor, with the same
+                       directory layout as \code{'slurm'} --- useful for debugging the file handling \\
+  \code{'local-map'} & evaluate sequentially inside the calling process: no jobs and no
+                       directories. Fastest for cheap analytic functions and for tests \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+A practical progression is to develop with \code{'local-map'}, check the files a real evaluation
+writes with \code{'local'}, and then run with \code{'slurm'}. Scheduler options --- partition, time
+limit, cores, memory --- are passed through \code{submitit_kwargs}, which is forwarded to submitit's
+\code{AutoExecutor.update_parameters} (for example \code{slurm_partition}, \code{timeout_min},
+\code{cpus_per_task}, \code{mem_gb}).
+
+\section{The audit trail}
+\label{sec:audit}
+
+With \code{'slurm'} or \code{'local'}, every evaluation leaves a directory behind:
+
+\begin{lstlisting}[style=plain]
+work_dir/
+  points_history.txt      every point of every call, led by call and point index
+  values_history.txt     the corresponding results
+  0/                  the first map() call, e.g. iteration 0
+    inputs.txt        every point of the call, one per row
+    outputs.txt       the corresponding results
+    extra_arg.pkl     the extra_arg, when one was given
+    0/
+      input.txt       the point
+      output.txt      its result
+      ...             anything the function itself wrote
+    1/
+    ...
+  1/                  the second call
+  ...
+\end{lstlisting}
+
+The submitit logs of each job sit in the call's directory too, so a failed evaluation can be
+debugged from its own inputs, outputs and error log, and a point's own output files can be re-used
+later, for instance to compute a different quantity from the same runs. Once a call's results are
+in, its points and results are also appended to \code{work_dir/points_history.txt} and
+\code{work_dir/values_history.txt}, one row per point, led by the call and point indices.
+
+When only the results matter, the call directories are clutter. \code{keep_run_dirs} decides what
+stays: \code{'all'} (the default) keeps them, \code{'failed'} removes those in which every
+evaluation succeeded, and \code{'none'} removes them all. The two history files are written in
+every mode. A fresh run expects \code{work_dir} not to hold an earlier run's output, numbered call
+directories or \code{points_history.txt}; use a new \code{work_dir}, or resume the old run from its
+restart file (\cref{sec:restart}).
+
+\section{Failures}
+\label{sec:failures}
+
+On a cluster some evaluations fail: a node dies, a simulation diverges, a job runs out of time.
+An evaluation is counted as \textbf{failed} when
+\begin{itemize}
+  \item it returns \code{None}, NaN, or \code{job_fail_value};
+  \item its job raises an exception; or
+  \item it stays in the running state longer than \code{check_output_timeout_minutes}, in which case
+        its job is cancelled.
+\end{itemize}
+Its result is then recorded as \code{job_fail_value}, and the run continues. The default is NaN for
+minimization and $-10^{10}$ for the MCMC functions: a walker proposed into a failed point sees an
+extremely low log-probability and simply rejects the move. Failed \emph{submissions} --- a
+scheduler hiccup rather than a failed evaluation --- are retried up to
+\code{submit_retry_max_attempts} times, \code{submit_retry_wait_seconds} apart;
+\code{submit_delay_seconds} adds a pause after each submission, and
+\code{check_output_interval_seconds} sets how often job states are polled.
+
+\section{The evaluation history}
+
+Every point a pool has evaluated is recorded. The pool, returned in each function's status as
+\code{status['slurm_pool']}, exposes:
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l L@{}}
+  \toprule
+  \textbf{attribute} & \textbf{content} \\
+  \midrule
+  \code{points_history}       & all evaluated points, in submission order, shape $(n, d)$ \\
+  \code{values_history}       & their results, shape $(n, 1)$; failed points hold \code{job_fail_value} \\
+  \code{inds_success_points}, \code{inds_failed_points} & row indices of successful and failed evaluations \\
+  \code{evaluated_points_set} & the set of evaluated points, for instant duplicate checks \\
+  \code{point_loc_dict}       & for each point, the (call, index) directory holding its files \\
+  \code{num_evaluated_points} & the total count \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+The duplicate check is what lets \code{slurm_minimize} guarantee it never pays twice for the same
+point, and the history is what a surrogate is trained on. For very long MCMC runs whose history is
+not needed, \code{record_history=False} saves the memory --- and time, since the bookkeeping grows
+with the number of evaluations. It governs these in-memory arrays only: the same record is written
+to disk as it goes, in \code{points_history.txt} and \code{values_history.txt} (\cref{sec:audit}).
+
+\section{Restarting an interrupted run}
+\label{sec:restart}
+
+A calibration can run for days, and jobs get killed. With \code{save_restart=True} the complete
+state of a run --- optimizer or sampler, evaluation history, iteration counter --- is written to
+\code{work_dir/restart_file} after every \code{restart_save_interval} iterations. The write is
+atomic: the file is written under a temporary name and then renamed, so a job killed mid-save
+leaves the previous restart file intact.
+
+A \code{SlurmPool} used on its own has no restart file of its own; it takes \code{load_restart=True}
+instead, which rebuilds its call counter and its history from the two history files and continues
+the numbering, evaluating whatever the next \code{map()} is given.
+
+To continue, call the same function again with \code{load_restart=True}. It resumes from the saved
+state and runs \code{num_iters} \emph{further} iterations, so the same call also extends a run that
+finished. The default file names are \code{opt_restart.pkl}, \code{mcmc_restart.pkl} and
+\code{hybrid_restart.pkl}; \code{slurm_mcmc} and \code{slurm_mcmc_hybrid} also accept the state as
+an in-memory dictionary, \code{status_restart}.
+
+By default each function installs a handler for \code{SIGTERM}, so that a run cancelled with
+\code{scancel} exits with an error code and Slurm marks it as failed rather than completed. Pass
+\code{install_signal_handler=False} when embedding a run in an application that manages its own
+signals.
+
+\section{Reproducible runs}
+\label{sec:seed}
+
+Every algorithm in the package makes random choices: the proposals of an MCMC sampler, the
+candidates of an optimizer, the validation points and model fits of the hybrid pipeline. Pass
+\code{random_seed} to make a run reproducible:
+\begin{lstlisting}
+status = slurm_mcmc(..., random_seed=0)
+\end{lstlisting}
+The seed is applied at the start of the loop, inside the process that runs it --- not by the
+script that calls the function. That distinction matters in remote mode (\cref{sec:remote}): the
+loop then runs in a fresh process on a compute node, which a \code{np.random.seed} call in the
+submitting script never reaches, so without \code{random_seed} a remote run follows a different
+trajectory from the same configuration. It seeds numpy's global generator, from which \texttt{emcee},
+\texttt{nevergrad} and scikit-learn draw, Python's own generator, and torch's when \texttt{botorch}
+is in use.
+
+The restart file stores the state of those generators, so a run that was interrupted and resumed
+reproduces the run that was never interrupted, iteration for iteration.
+
+\begin{cautionbox}[Reproducible on the same software stack]
+A seed fixes every random choice, not the arithmetic. Different versions of numpy, scipy or
+scikit-learn, or a different linear-algebra library or CPU, change results in the last digits, and a
+long MCMC or a sequence of model fits amplifies those differences. Expect identical results from the
+same environment, and statistically equivalent ones elsewhere. A function that is itself random, such
+as a stochastic simulation, has to seed itself.
+\end{cautionbox}
+
+\section{Running the whole loop as a job: remote mode}
+\label{sec:remote}
+
+The loop that drives an optimization or MCMC --- asking for points, waiting for their jobs,
+updating the algorithm --- is itself a long-running process. Login nodes usually limit how long a
+process may run. With \code{remote=True} the whole loop is instead submitted as a job of its own:
+its configuration is pickled and run on \code{remote_cluster} (\code{'slurm'} or \code{'local'}),
+under the name \code{main_{job_name}}, with a 30-day time limit unless
+\code{remote_submitit_kwargs} says otherwise.
+
+The call then returns a submitit \code{Job} immediately, instead of the status dictionary.
+\code{job.result()} waits for the run to finish and returns the same dictionary a local run would.
+submitit also stores it in \code{work_dir} as \code{<job_id>_0_result.pkl}, so it can be recovered
+later from nothing but the directory and the job id:
+\begin{lstlisting}
+import submitit
+status = submitit.SlurmJob(folder='mcmc', job_id='123456').result()
+\end{lstlisting}
+
+\begin{keypoint}[What survives a remote run]
+The result file is written only when the job finishes. A failed job stores its traceback there
+instead, and \code{.result()} raises it; a job killed before the end leaves no result file at all,
+but its restart file (\cref{sec:restart}) is still there to resume from.
+\end{keypoint}
+
+\section{Configuration objects}
+
+Each entry point is a thin wrapper that packs its keyword arguments into a configuration dataclass
+and runs it. The dataclasses and runners can be used directly, for instance to build, inspect or
+store a configuration before running it:
+\begin{lstlisting}
+from slurmcmc.optimization import MinimizeConfig, Minimizer
+from slurmcmc.mcmc import MCMCConfig, MCMCRunner
+from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
+
+status = MCMCRunner(MCMCConfig(log_prob_fun=log_prob, init_points=init_points,
+                               num_iters=1000)).run()
+\end{lstlisting}

@@ -1,6 +1,7 @@
 import logging
 import os
 import pickle
+import random
 import shutil
 import sys
 
@@ -127,3 +128,43 @@ def calc_dimension(point):
 def signal_handler(sig, frame):
     logging.info(f"Received signal {sig}, shutting down gracefully...")
     sys.exit(1)  # Non-zero so Slurm marks the job as FAILED, not COMPLETED
+
+
+def seed_random_generators(random_seed, include_torch=False):
+    """
+    Seed numpy's global generator (used by emcee, nevergrad and scikit-learn), Python's, and torch's
+    when botorch is in use. Called at the start of each runner's run(), so it also takes effect in
+    a remote job, which a seed set in the submitting script never reaches.
+    """
+    if random_seed is None:
+        return
+    if isinstance(random_seed, bool) or not isinstance(random_seed, (int, np.integer)) \
+            or not 0 <= random_seed < 2 ** 32:
+        err_msg = f'random_seed must be None or an integer in [0, 2**32), got {random_seed!r}.'
+        logging.error(err_msg)
+        raise ValueError(err_msg)
+    random.seed(int(random_seed))
+    np.random.seed(int(random_seed))
+    if include_torch:
+        import torch
+        torch.manual_seed(int(random_seed))
+
+
+def get_random_state():
+    """State of the global generators, stored in restart files so a resume continues the stream."""
+    state = {'python': random.getstate(), 'numpy': np.random.get_state()}
+    torch = sys.modules.get('torch')
+    if torch is not None:
+        state['torch'] = torch.get_rng_state()
+    return state
+
+
+def set_random_state(state):
+    """Restore a state captured by get_random_state; restart files from older versions have none."""
+    if not state:
+        return
+    random.setstate(state['python'])
+    np.random.set_state(state['numpy'])
+    if 'torch' in state:
+        import torch
+        torch.set_rng_state(state['torch'])

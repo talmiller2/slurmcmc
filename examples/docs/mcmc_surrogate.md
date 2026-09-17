@@ -60,3 +60,10 @@ We can see that the ratio is close to 1 to within ~1%, validating the use of the
 
 Later, these probability ratios (importance weights) could be used to improve the accuracy of predictions 
 using the surrogate-based MCMC samples set.
+
+-----
+
+For the automated version of this procedure — which iterates it to convergence, decides when
+to stop from measured criteria, and needs no manual choice of how many expensive evaluations
+to spend — see
+[MCMC with surrogate (automated hybrid pipeline)](mcmc_surrogate_hybrid.md).

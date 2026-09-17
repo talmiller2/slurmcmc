@@ -14,9 +14,9 @@ Implemented by wrapping and stitching together [`submitit`](https://github.com/f
 
 - **Parallel black-box optimization** via [`nevergrad`](https://github.com/facebookresearch/nevergrad) (Differential Evolution, PSO, …) or Bayesian optimization via [`botorch`](https://github.com/pytorch/botorch) (Gaussian Process with Expected Improvement).
 - **Ensemble MCMC** via [`emcee`](https://github.com/dfm/emcee), with walkers evaluated in parallel on a cluster.
-- **MCMC with a surrogate model**: evaluate an expensive model to build a surrogate, then sample the surrogate cheaply.
-- **Full audit trail**: each function evaluation gets its own directory with `input.txt`, `output.txt`, and `inputs.txt`/`outputs.txt` per iteration.
-- **Restart/checkpoint support**: save and resume long runs from pickle files.
+- **Automated hybrid surrogate-MCMC** (`slurm_mcmc_hybrid`): iteratively refine a Gaussian-process (or polynomial) surrogate with importance-weight validation until the MCMC distribution converges — typically at a fraction of the expensive-evaluation cost.
+- **Full audit trail**: each function evaluation gets its own directory with `input.txt`, `output.txt`, and `inputs.txt`/`outputs.txt` per iteration, and every point and result is also collected in `points_history.txt`/`values_history.txt`, the in-memory history written to disk. When only the results matter, `keep_run_dirs='none'` (or `'failed'`) removes the per-iteration directories once their results are in.
+- **Restart/checkpoint support**: `save_restart`/`load_restart` on `slurm_minimize`, `slurm_mcmc` and `slurm_mcmc_hybrid` — resume a run that was interrupted, without repeating any expensive evaluation. Writes are atomic, so a job killed mid-save cannot corrupt the file. A `SlurmPool` used on its own takes `load_restart=True`, which rebuilds its call counter and evaluation history from those history files.
 - **Constraint handling**: skip infeasible points before evaluating the expensive function.
 - **Deferred function import**: pass a `{module_dir, module_name, function_name}` dict to avoid pickling issues with remotely-defined functions.
 
@@ -66,10 +66,12 @@ Install the package (core dependencies are pulled in automatically):
 pip install -e .
 ```
 
-To also use the Bayesian optimization backend (botorch):
+To also use the Bayesian optimization backend (botorch), or the hybrid
+surrogate-MCMC pipeline (scikit-learn):
 
 ```bash
 pip install -e ".[botorch]"
+pip install -e ".[hybrid]"
 ```
 
 Or install everything needed for the examples or the tests:
@@ -77,6 +79,12 @@ Or install everything needed for the examples or the tests:
 ```bash
 pip install -e ".[examples]"
 pip install -e ".[test]"
+```
+
+To install everything at once — the package with every optional dependency:
+
+```bash
+pip install -e ".[botorch,hybrid,examples,test]"
 ```
 
 Requires Python >= 3.10.
@@ -110,3 +118,4 @@ pytest -vv tests/test_map_local.py::test_slurmpool_localmap
 1. [MCMC](examples/docs/mcmc.md)
 1. [Comparing MCMC and MC](examples/docs/mcmc_and_mc_comparison.md)
 1. [MCMC with surrogate](examples/docs/mcmc_surrogate.md)
+1. [MCMC with surrogate (automated hybrid pipeline)](examples/docs/mcmc_surrogate_hybrid.md)

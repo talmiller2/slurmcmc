@@ -1,0 +1,218 @@
+\chapter{Optimization}
+\label{ch:optimization}
+
+\section{Why optimize first}
+
+Before asking how uncertain the parameters are, it is worth asking whether the model can represent
+the data at all. Optimization answers that: minimize a loss $f(\theta)$ that measures the misfit,
+for example $\chi^2(\theta)$, and check that its minimum is statistically acceptable. If it is not,
+no amount of posterior sampling will help --- the problem lies with the model. If it is, the
+minimizer has also located the region where the posterior lives, which is exactly where MCMC should
+start its walkers (\cref{ch:mcmc}).
+
+The problem solved is a bounded, optionally constrained minimization,
+\begin{equation}
+  \min_{\theta}\; f(\theta)
+  \quad\text{subject to}\quad
+  \theta \in [\ell_1, u_1] \times \dots \times [\ell_d, u_d],
+  \qquad c(\theta) \le 0,
+  \label{eq:minimize}
+\end{equation}
+where the box is \code{param_bounds} and $c$ is the optional \code{constraint_fun}: a point is
+feasible when $c(\theta) \le 0$. The function $f$ is a black box: no gradients, and every value
+costs an expensive evaluation. What can be parallelized is the number of points evaluated per
+iteration, \code{num_workers}.
+
+\section{The algorithms}
+
+Three families are available. The first two are population methods from \texttt{nevergrad}; the
+third builds a statistical model of $f$.
+
+\subsection{Differential Evolution (default)}
+
+Differential Evolution (DE) keeps a population of candidate points and improves it generation by
+generation. For each member $\theta_i$ it builds a mutant from three other members,
+\begin{equation}
+  v_i = \theta_a + F\,(\theta_b - \theta_c),
+\end{equation}
+mixes coordinates of the mutant and of $\theta_i$ (crossover) into a trial point, and replaces
+$\theta_i$ by the trial point if it has a lower loss. The difference vectors adapt the step size
+to the population's own spread, which makes DE robust on rugged and badly scaled losses. The
+default in slurmcmc is \texttt{nevergrad}'s DE with two-point crossover and a population equal to
+\code{num_workers}, so one generation is exactly one iteration of parallel evaluations.
+
+\subsection{Particle Swarm Optimization}
+
+Particle Swarm Optimization (PSO) moves each particle with a velocity that is pulled towards the
+best point the particle has seen, $p_i$, and the best point the swarm has seen, $g$:
+\begin{equation}
+  u_i \leftarrow \omega\, u_i + c_1 r_1 (p_i - \theta_i) + c_2 r_2 (g - \theta_i),
+  \qquad
+  \theta_i \leftarrow \theta_i + u_i,
+\end{equation}
+where $r_1$ and $r_2$ are random numbers in $[0,1]$. Select it with
+\code{optimizer_class=ng.optimizers.ConfPSO(popsize=num_workers)}; any other \texttt{nevergrad}
+optimizer can be passed the same way.
+
+\subsection{Bayesian optimization}
+
+Bayesian optimization (BO), with \code{optimizer_package='botorch'}, fits a Gaussian-process model
+to all evaluations so far and uses it to decide where to evaluate next. The model gives, at every
+point, a predicted loss and an uncertainty. A candidate is chosen to maximize the expected
+improvement over the best loss found so far, $f^\ast$,
+\begin{equation}
+  \mathrm{EI}(\theta) \;=\; \mathbb{E}\!\left[\max\!\big(f^\ast - f(\theta),\, 0\big)\right],
+\end{equation}
+which balances exploiting regions of low predicted loss against exploring regions of high
+uncertainty. slurmcmc uses \texttt{botorch}'s batch version, \code{qLogExpectedImprovement}, to
+propose \code{num_workers} points per iteration, with inputs normalized and outputs standardized;
+the first iteration, with no data yet, uses a quasi-random Sobol design.
+
+BO spends far fewer evaluations when each one is very expensive, but the model has a cost of its
+own. Fitting a Gaussian process to $n$ points scales as $\mathcal{O}(n^3)$, and it is refitted every
+iteration, so a long run slows down. Two options in \code{botorch_kwargs} address this:
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l l L@{}}
+  \toprule
+  \textbf{key} & \textbf{default} & \textbf{meaning} \\
+  \midrule
+  \code{num_best_points} & \code{None} & train the model only on this many lowest-loss points, keeping each fit bounded in size \\
+  \code{sequential}      & \code{True} & choose the batch greedily, one point at a time, rather than optimizing all $q\times d$ coordinates jointly; much faster at equivalent quality \\
+  \code{num_restarts}    & \code{10}   & restarts of the acquisition-function optimization \\
+  \code{raw_samples}     & \code{100}  & random samples seeding those restarts \\
+  \code{options}         & \code{None} & extra options for \texttt{botorch}'s \code{optimize_acqf} \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+\section{How a batch of candidates is chosen}
+
+Each iteration, \code{slurm_minimize} asks the optimizer for candidates until it holds
+\code{num_workers} of them that are
+\begin{itemize}
+  \item \textbf{new} --- not evaluated in any earlier iteration, nor already in this batch;
+  \item \textbf{feasible} --- satisfying \code{constraint_fun} $\le 0$, which is evaluated cheaply
+        before any expensive job is spent on the point.
+\end{itemize}
+Only then is the batch submitted as one job array. If \code{num_asks_max} requests pass without
+completing the batch --- typically because the feasible region is tiny --- the run stops with an
+error rather than looping forever.
+
+Starting points can be supplied as \code{init_points}; they are evaluated in the first iteration
+and must satisfy the constraint. An iteration in which \emph{every} evaluation failed stops the
+run, since the optimizer would have nothing to learn from.
+
+\needspace{14\baselineskip}
+\section{Usage}
+
+\begin{lstlisting}
+import numpy as np
+from slurmcmc.optimization import slurm_minimize
+
+def loss_fun(x):
+    return (1 - x[0])**2 + 100 * (x[1] - x[0]**2)**2
+
+def constraint_fun(x):                      # feasible when <= 0
+    return (x[0] + 1)**2 + (x[1] + 1)**2 - 16
+
+status = slurm_minimize(loss_fun=loss_fun, constraint_fun=constraint_fun,
+                        param_bounds=[[-5, 5], [-5, 5]],
+                        num_workers=10, num_iters=30,
+                        cluster='slurm', work_dir='minimize', save_restart=True)
+print(status['x_min'], status['loss_min'])
+\end{lstlisting}
+
+The arguments specific to minimization are listed below; those shared by every function are in
+\cref{app:common}.
+
+\begin{argtable}
+  \code{loss_fun} & required & the loss, \code{f(x)} or \code{f(x, extra_arg)}; a callable or a deferred-import dictionary \\
+  \code{param_bounds} & required & \code{[[lo, hi], ...]}, one pair per parameter \\
+  \code{num_workers} & required & points evaluated in parallel per iteration \\
+  \code{num_iters} & required & iterations to run (further iterations, when resuming) \\
+  \code{optimizer_package} & \code{'nevergrad'} & \code{'nevergrad'} or \code{'botorch'} \\
+  \code{optimizer_class} & \code{None} & a \texttt{nevergrad} optimizer; \code{None} is Differential Evolution \\
+  \code{botorch_kwargs} & \code{None} & options of Bayesian optimization, see the table above \\
+  \code{init_points} & \code{None} & points to evaluate in the first iteration; must satisfy the constraint \\
+  \code{constraint_fun} & \code{None} & \code{c(x)}, feasible when $\le 0$; checked before a point is evaluated \\
+  \code{num_asks_max} & \code{1000} & optimizer requests allowed per iteration while filling the batch \\
+  \code{job_fail_value} & NaN & result recorded for a failed evaluation \\
+\end{argtable}
+
+The returned status dictionary contains the best point \code{x_min} and its loss \code{loss_min};
+the best loss up to each iteration, \code{loss_min_all_iter}, and within each iteration,
+\code{loss_min_per_iter}; where the minimum was found, \code{loc_point_min_all_iter}; the
+\code{slurm_pool} with the complete evaluation history; the \code{optimizer} itself; and counters
+of loss, constraint and optimizer calls.
+
+\section{Example: a constrained 2D Rosenbrock}
+\label{sec:opt-example}
+
+The loss is the two-dimensional Rosenbrock function inside a circle,
+\begin{equation}
+  \min_{x,y}\; (1-x)^2 + 100\,(y-x^2)^2
+  \quad\text{subject to}\quad (x+1)^2 + (y+1)^2 \le 16,
+\end{equation}
+a narrow curved valley whose minimum at $(1,1)$ lies inside the constraint. Differential Evolution
+with default settings runs for 30 iterations of 10 parallel evaluations.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.78\linewidth]{example_optimization_loss_progress.png}
+  \caption{Loss per iteration: all sampled points (blue), the best point of each iteration
+           (green), and the best point found so far (red).}
+  \label{fig:opt-loss}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.72\linewidth]{example_optimization_2d_visualization.png}
+  \caption{The loss (logarithm of its absolute value), the circular constraint (white), and the
+           sampled points, from dark (early) to bright (late), closing in on the minimum (star).}
+  \label{fig:opt-2d}
+\end{figure}
+
+The number of iterations here is arbitrary. In a real calibration the loss measures the fit to data,
+and the goal is to reach a statistically acceptable value before moving on to MCMC.
+
+\section{Comparing the algorithms}
+\label{sec:opt-comparison}
+
+The three algorithms are compared on the $d$-dimensional Rosenbrock function,
+\begin{equation}
+  f(\theta) = \sum_{i=1}^{d-1} \Big[ 100\,(\theta_{i+1} - \theta_i^2)^2 + (1-\theta_i)^2 \Big],
+  \label{eq:rosenbrock}
+\end{equation}
+whose minimum $f = 0$ lies at $\theta = (1, \dots, 1)$, over $[-10, 10]^d$ without constraints.
+Every run uses 50 parallel evaluations for 50 iterations. DE and PSO use \texttt{nevergrad}'s
+defaults; BO uses \code{num_restarts=10}, \code{raw_samples=100}, and no trimming of its training
+set. For a fair comparison all three start from the same 50 random points, and the whole comparison
+is repeated for three different sets of starting points (line styles). The legend gives the run
+time of each full optimization.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.74\linewidth]{example_optimization_algorithms_comparison_2d.png}
+  \caption{Best loss per iteration for $d=2$.}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.74\linewidth]{example_optimization_algorithms_comparison_5d.png}
+  \caption{Best loss per iteration for $d=5$.}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.74\linewidth]{example_optimization_algorithms_comparison_10d.png}
+  \caption{Best loss per iteration for $d=10$.}
+\end{figure}
+
+\begin{keypoint}[What the comparison shows]
+On these losses PSO outperforms both DE and BO. BO costs disproportionately more computation per
+iteration --- its Gaussian process is refitted on a growing data set --- while rarely improving on
+the alternatives, briefly at $d=10$ being the exception. BO earns its cost only when each evaluation
+is so expensive that saving evaluations dominates everything else.
+\end{keypoint}

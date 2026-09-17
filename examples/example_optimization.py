@@ -60,8 +60,7 @@ optimizer_package = 'nevergrad'
 optimizer_class = ng.optimizers.DifferentialEvolution(crossover="twopoints", popsize=num_workers)
 # optimizer_class = ng.optimizers.ConfPSO(popsize=num_workers)
 
-# the nevergrad package also supports baysian-optimizaiton algorithms but that are parallelizable
-# in the botorch package there are bayesian-optimization algorithms that are parallelizable
+# parallel Bayesian optimization is available through botorch
 # (see https://botorch.org/tutorials/closed_loop_botorch_only)
 # optimizer_package = 'botorch'
 # optimizer_class = None

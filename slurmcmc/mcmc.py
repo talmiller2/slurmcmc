@@ -12,20 +12,15 @@ import numpy as np
 import submitit
 
 from slurmcmc.general_utils import (set_logging, save_restart_file, load_restart_file, save_extra_arg_to_file,
-                                    point_to_tuple, signal_handler)
+                                    point_to_tuple, signal_handler, seed_random_generators,
+                                    get_random_state, set_random_state)
 from slurmcmc.import_utils import deferred_import_function_wrapper
-from slurmcmc.slurm_utils import Cluster, SlurmPool, submit_remote_run
+from slurmcmc.slurm_utils import Cluster, KeepRunDirs, SlurmPool, submit_remote_run
 
 
 @dataclass
 class MCMCConfig:
-    """
-    Complete, picklable description of a slurm_mcmc run.
-
-    This is the single source of truth for a run's parameters: `MCMCRunner`
-    consumes it, and remote mode pickles it into the driver Slurm job (instead
-    of the old, fragile `locals()` re-submission trick).
-    """
+    """Complete, picklable description of a slurm_mcmc run; remote mode pickles it into the job."""
     log_prob_fun: Union[Callable, Dict]
     init_points: np.ndarray
     num_iters: int
@@ -55,7 +50,10 @@ class MCMCConfig:
     check_output_timeout_minutes: float = int(1e5)
     restart_save_interval: int = 1
     record_history: bool = True
+    keep_run_dirs: KeepRunDirs = 'all'
     install_signal_handler: bool = True
+    # seeds every random choice, inside the process that runs the loop (so remote runs too)
+    random_seed: Optional[int] = None
     # remote run params:
     remote: bool = False
     remote_cluster: Literal['slurm', 'local'] = 'slurm'
@@ -99,9 +97,11 @@ class MCMCRunner:
             status = load_restart_file(cfg.work_dir, cfg.restart_file)
         self.sampler = status['sampler']
         self.slurm_pool = status['slurm_pool']
+        self.slurm_pool.keep_run_dirs = self.cfg.keep_run_dirs  # the current setting, not the saved one
         self.sampler.pool = self.slurm_pool
         self.ini_iter = status['ini_iter']
         self.time_per_iter = status['time_per_iter']
+        set_random_state(status.get('random_state'))
 
     def _init_fresh_state(self, log_prob_fun: Callable) -> None:
         cfg = self.cfg
@@ -117,7 +117,7 @@ class MCMCRunner:
                                     submit_delay_seconds=cfg.submit_delay_seconds,
                                     check_output_interval_seconds=cfg.check_output_interval_seconds,
                                     check_output_timeout_minutes=cfg.check_output_timeout_minutes,
-                                    record_history=cfg.record_history,
+                                    record_history=cfg.record_history, keep_run_dirs=cfg.keep_run_dirs,
                                     )
 
         # save the extra_arg in the work folder to document the full input used
@@ -165,6 +165,7 @@ class MCMCRunner:
 
         log_prob_fun = deferred_import_function_wrapper(cfg.log_prob_fun)
 
+        seed_random_generators(cfg.random_seed)
         if cfg.load_restart or cfg.status_restart is not None:
             self._load_state()
         else:
@@ -195,7 +196,7 @@ class MCMCRunner:
             if cfg.save_restart and np.mod(curr_iter, cfg.restart_save_interval) == 0:
                 if cfg.verbosity >= 3:
                     logging.info('    saving restart file: ' + cfg.work_dir + '/' + cfg.restart_file)
-                save_restart_file(status, cfg.work_dir, cfg.restart_file)
+                save_restart_file({**status, 'random_state': get_random_state()}, cfg.work_dir, cfg.restart_file)
                 self.sampler.pool = self.slurm_pool  # need to redefine the pool because pickling removes sampler.pool
 
         return status
@@ -236,7 +237,9 @@ def slurm_mcmc(
         check_output_timeout_minutes: float = int(1e5),
         restart_save_interval: int = 1,
         record_history: bool = True,
+        keep_run_dirs: KeepRunDirs = 'all',
         install_signal_handler: bool = True,
+        random_seed: Optional[int] = None,
         # remote run params:
         remote: bool = False,
         remote_cluster: Literal['slurm', 'local'] = 'slurm',
@@ -262,11 +265,19 @@ def slurm_mcmc(
         Starting positions of the MCMC walkers.
     num_iters : int
         Number of MCMC iterations to run.
+    keep_run_dirs : 'all' | 'failed' | 'none'
+        What to keep of each batch's directory under work_dir once its results are in: 'all'
+        (default) keeps everything, for investigating crashes or re-using the points' own output
+        files; 'failed' keeps only batches with a failed evaluation; 'none' removes them all.
+        Every point and result is appended to points_history.txt / values_history.txt either way.
     install_signal_handler : bool
         If True (default), install a SIGTERM handler that exits with code 1
         so Slurm marks the job as FAILED rather than COMPLETED on scancel.
         Set to False if you are embedding this function in a larger application
         that manages its own signal handling.
+    random_seed : int or None
+        Seed for every random choice of the run, applied inside the process that runs the loop,
+        so remote runs are reproducible too; restart files store the generator state.
     remote : bool
         If True, submit the whole MCMC loop as its own job on remote_cluster and
         return the submitit Job handle immediately (job.result() gives the status
@@ -290,7 +301,8 @@ def slurm_mcmc(
         check_output_interval_seconds=check_output_interval_seconds,
         check_output_timeout_minutes=check_output_timeout_minutes,
         restart_save_interval=restart_save_interval, record_history=record_history,
-        install_signal_handler=install_signal_handler,
+        keep_run_dirs=keep_run_dirs,
+        install_signal_handler=install_signal_handler, random_seed=random_seed,
         remote=remote, remote_cluster=remote_cluster, remote_submitit_kwargs=remote_submitit_kwargs,
     )
 

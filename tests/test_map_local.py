@@ -281,3 +281,83 @@ def test_slurmpool_localmap_empty_points(verbosity):
     assert res == []
     assert pool.num_calls == 0
     assert pool.num_evaluated_points == 0
+
+
+def _fun_that_fails_above_5(x):
+    if x > 5:
+        raise RuntimeError('evaluation failed')
+    return x ** 2
+
+
+@pytest.mark.parametrize('keep_run_dirs, expected_call_dirs', [('all', ['0', '1']),
+                                                               ('failed', ['1']),
+                                                               ('none', [])])
+def test_slurmpool_keep_run_dirs(work_dir, verbosity, keep_run_dirs, expected_call_dirs):
+    """
+    The per-call directories can be removed once their results are in ('failed' keeps those
+    with a failed evaluation, for inspection), while points_history.txt / values_history.txt keep
+    every point and result in every mode.
+    """
+    pool = SlurmPool(work_dir=work_dir, dim_input=1, dim_output=1, cluster='local', verbosity=verbosity,
+                     job_fail_value=-1.0, keep_run_dirs=keep_run_dirs)
+    pool.map(_fun_that_fails_above_5, [2, 3])
+    pool.map(_fun_that_fails_above_5, [6, 4])
+
+    assert sorted(d for d in os.listdir(work_dir) if d.isdigit()) == expected_call_dirs
+    inputs = np.loadtxt(os.path.join(work_dir, 'points_history.txt'))
+    outputs = np.loadtxt(os.path.join(work_dir, 'values_history.txt'))
+    np.testing.assert_array_equal(inputs, [[0, 0, 2], [0, 1, 3], [1, 0, 6], [1, 1, 4]])
+    np.testing.assert_array_equal(outputs, [[0, 0, 4], [0, 1, 9], [1, 0, -1], [1, 1, 16]])
+
+    # the history files mark the work_dir as used, even with no call directories left
+    with pytest.raises(ValueError):
+        SlurmPool(work_dir=work_dir, dim_input=1, dim_output=1, cluster='local', verbosity=verbosity)
+
+
+def test_slurmpool_rejects_invalid_keep_run_dirs(verbosity):
+    with pytest.raises(ValueError, match='keep_run_dirs'):
+        SlurmPool(dim_input=1, dim_output=1, cluster='local-map', verbosity=verbosity, keep_run_dirs=False)
+
+
+def _fun_of_two_that_fails_above_5(x):
+    if x[0] > 5:
+        raise RuntimeError('evaluation failed')
+    return x[0] + x[1]
+
+
+def test_slurmpool_load_restart_continues_a_previous_run(work_dir, verbosity):
+    """
+    A pool used directly has no restart file of its own; load_restart rebuilds its call counter
+    and history from the history files, which survive keep_run_dirs removing the directories.
+    """
+    pool = SlurmPool(work_dir=work_dir, dim_input=2, dim_output=1, cluster='local', verbosity=verbosity,
+                     job_fail_value=-1.0, keep_run_dirs='none')
+    pool.map(_fun_of_two_that_fails_above_5, [[1, 2], [3, 4]])
+    pool.map(_fun_of_two_that_fails_above_5, [[6, 1], [2, 2]])
+
+    resumed = SlurmPool(work_dir=work_dir, dim_input=2, dim_output=1, cluster='local',
+                        verbosity=verbosity, job_fail_value=-1.0, load_restart=True)
+    assert resumed.num_calls == 2
+    np.testing.assert_array_equal(resumed.points_history, [[1, 2], [3, 4], [6, 1], [2, 2]])
+    np.testing.assert_array_equal(resumed.values_history.ravel(), [3, 7, -1, 4])
+    assert resumed.inds_failed_points == [2] and resumed.inds_success_points == [0, 1, 3]
+    assert resumed.point_loc_dict[point_to_tuple(np.array([3.0, 4.0]))] == (0, 1)
+
+    # it continues the numbering, and evaluates what it is given rather than skipping repeats
+    assert resumed.map(_fun_of_two_that_fails_above_5, [[3, 4]]) == [7]
+    assert os.path.isdir(os.path.join(work_dir, '2'))
+    assert len(np.loadtxt(os.path.join(work_dir, 'points_history.txt'))) == 5
+
+
+def test_slurmpool_load_restart_rejects_what_it_cannot_continue(work_dir, verbosity):
+    pool = SlurmPool(work_dir=work_dir, dim_input=2, dim_output=1, cluster='local', verbosity=verbosity)
+    pool.map(lambda x: x[0] + x[1], [[1, 2]])
+
+    with pytest.raises(ValueError, match='do not match this pool'):  # different dimensions
+        SlurmPool(work_dir=work_dir, dim_input=3, dim_output=1, cluster='local',
+                  verbosity=verbosity, load_restart=True)
+    with pytest.raises(ValueError, match='nothing to continue'):     # no previous run there
+        SlurmPool(work_dir=os.path.join(work_dir, 'elsewhere'), dim_input=2, dim_output=1,
+                  cluster='local', verbosity=verbosity, load_restart=True)
+    with pytest.raises(ValueError, match='work_dir'):                # nothing is written at all
+        SlurmPool(dim_input=2, dim_output=1, cluster='local-map', verbosity=verbosity, load_restart=True)
