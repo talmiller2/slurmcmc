@@ -510,20 +510,41 @@ def test_distributed_gp_experts_on_slurm(work_dir):
     assert leftovers == [], f'scratch files left on the shared filesystem: {leftovers[:3]}'
 
 
-def test_rbcm_seeded_fits_are_identical_across_backends():
+def test_rbcm_expert_seeds_reach_every_backend(monkeypatch):
     """
     Each expert's hyperparameter restarts get an explicit seed drawn in the caller: fitted by
     joblib or submitit, an expert runs in another process, which a global seed never reaches.
+    The seeds handed to the backend are the assertion, because they are exact: an expert fitted
+    in a worker process runs its linear algebra with a different thread count, so the optimizer's
+    last bits -- and with them the prediction -- are not reproducible to machine precision, and
+    the predictions are only compared loosely.
     """
     from slurmcmc.general_utils import seed_random_generators
     from slurmcmc.hybrid import DistributedGPSurrogate
     X, y = _rbcm_training_set(n=300)
     probe, _ = _rbcm_training_set(n=40, seed=3)
-    predictions = []
-    for parallel in ('none', 'joblib'):
-        seed_random_generators(5)
+
+    handed_out = []
+    original = DistributedGPSurrogate._fit_experts
+
+    def recording_fit_experts(self, batches):
+        handed_out.append((self.parallel, [seed for _, _, seed in batches]))
+        return original(self, batches)
+
+    monkeypatch.setattr(DistributedGPSurrogate, '_fit_experts', recording_fit_experts)
+
+    def fit_and_predict(parallel, seed):
+        seed_random_generators(seed)
         surrogate = DistributedGPSurrogate(num_experts=3, min_points_per_expert=10,
                                            n_restarts_optimizer=2, parallel=parallel, n_jobs=3)
         surrogate.fit(X, y)
-        predictions.append(np.asarray(surrogate.predict(probe)))
-    np.testing.assert_allclose(predictions[0], predictions[1], rtol=0, atol=1e-10)
+        return np.asarray(surrogate.predict(probe))
+
+    serial = fit_and_predict('none', 5)
+    parallel = fit_and_predict('joblib', 5)
+    fit_and_predict('none', 6)
+
+    assert [name for name, _ in handed_out] == ['none', 'joblib', 'none']
+    assert handed_out[0][1] == handed_out[1][1], 'the backend changed the seeds the experts get'
+    assert handed_out[2][1] != handed_out[0][1], 'the seeds ignore the global generator'
+    np.testing.assert_allclose(parallel, serial, rtol=1e-4, atol=1e-6)
