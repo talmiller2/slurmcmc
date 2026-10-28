@@ -421,7 +421,7 @@ def test_surrogate_inherits_work_dir_unless_set_explicitly():
     required to be on a shared filesystem. An explicit choice by the caller still wins.
     """
     from slurmcmc.hybrid import DistributedGPSurrogate, HybridMCMCConfig, HybridMCMCRunner
-    shared = dict(log_prob_fun=log_prob_ring, init_points=np.zeros((4, 2)),
+    shared = dict(log_prob_fun=log_prob_ring, init_points=np.zeros((4, 2)), num_expensive_iters=5,
                   param_bounds=param_bounds, work_dir='/shared/run17', verbosity=0)
 
     inherited = HybridMCMCRunner(HybridMCMCConfig(

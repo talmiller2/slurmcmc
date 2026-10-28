@@ -417,3 +417,25 @@ def test_keep_run_dirs_none_leaves_only_the_history_files(work_dir):
     assert status['slurm_pool'].num_calls > 3
     assert call_dirs() == ['0', '1', '2']  # the calls after the restart were removed
     assert len(np.loadtxt(os.path.join(work_dir, 'points_history.txt'))) == status['slurm_pool'].num_evaluated_points
+
+
+def log_prob_box(x):
+    """A Gaussian cut to a box: -inf outside it, as for a failed or out-of-bounds point."""
+    if np.any(np.abs(x) > 1.0):
+        return -np.inf
+    return -0.5 * float(np.sum(x ** 2))
+
+
+def test_walkers_at_minus_inf_raise_no_numpy_warning(work_dir):
+    """
+    A proposal compared with a walker at -inf is -inf - -inf = nan, which emcee rightly rejects;
+    numpy's 'invalid value' warning about it is only noise, and is silenced.
+    """
+    import warnings
+    init_points = np.random.default_rng(0).uniform(-3, 3, (10, 2))   # most start at -inf
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        slurm_mcmc(log_prob_fun=log_prob_box, init_points=init_points, num_iters=20,
+                   cluster='local-map', verbosity=0, skip_initial_state_check=True)
+    assert not [w for w in caught if issubclass(w.category, RuntimeWarning)
+                and 'invalid value' in str(w.message)]

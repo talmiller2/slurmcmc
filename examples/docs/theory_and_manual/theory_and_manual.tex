@@ -18,7 +18,7 @@
 \newcommand{\pexp}{p_{\mathrm{exp}}}
 \newcommand{\psur}{p_{\mathrm{sur}}}
 \newcommand{\ESS}{\mathrm{ESS}}
-\newcommand{\ESSw}{\mathrm{ESS}_w}
+\newcommand{\effw}{\eta_w}
 \newcommand{\Lc}{L_c}
 \newcommand{\Nc}{N_c}
 \newcommand{\R}{\mathbb{R}}
@@ -31,6 +31,7 @@
 \definecolor{codebg}{RGB}{247,248,250}
 \definecolor{inlinecodebg}{RGB}{232,235,239}
 \usepackage[most]{tcolorbox}
+\usetikzlibrary{positioning,arrows.meta,shapes.geometric,calc}
 \newtcolorbox{keypoint}[1][Key point]{enhanced, breakable, colback=accentsoft, colframe=accent,
   boxrule=0pt, leftrule=3pt, arc=0pt, outer arc=0pt, left=9pt, right=9pt, top=6pt, bottom=6pt,
   fonttitle=\bfseries\small, coltitle=accent, colbacktitle=accentsoft, titlerule=0pt,
@@ -105,9 +106,7 @@
 % ---------------------------------------------------------------- title page
 \begin{titlepage}
   \centering
-  \vspace*{1.5cm}
-  \includegraphics[width=0.95\textwidth]{logo.jpeg}\par
-  \vspace{1.6cm}
+  \vspace*{5cm}
   {\color{accent}\rule{0.95\textwidth}{1pt}}\par\vspace{0.6cm}
   {\fontsize{34}{40}\selectfont\bfseries\color{accent} slurmcmc\par}
   \vspace{0.35cm}
@@ -119,7 +118,7 @@
    with parallel optimization, ensemble MCMC and surrogate models\\
    on a Slurm cluster\par}
   \vfill
-  {\large Version 2.0\par}
+  {\large Version 2.1\par}
   \vspace{0.3cm}
   {\large \today\par}
 \end{titlepage}

@@ -21,11 +21,14 @@ expensive posterior, and the mean is removed because a log-probability is only d
 constant. A run converges when
 
     weighted_log_error <= log_error_threshold,
-    ess_weights = (sum w)^2 / sum w^2 >= min_ess_weights,  (a few dominant weights can make the
-                                                             error spuriously small)
+    weight_efficiency = (sum w)^2 / (N_val sum w^2) >= min_weight_efficiency,
     posterior shift <= max(posterior_shift_tolerance, noise floor)   (when enabled).
 
-ess_weights counts validation points; it is unrelated to the ESS of a chain, N / tau.
+weight_efficiency is the importance-sampling (Kish) efficiency of the validation weights, in
+(0, 1]. If a fraction s of the surrogate posterior lies where the true posterior is negligible,
+it is ~ 1 - s: the weighted error cannot see such regions, since their weight is ~0, so this
+is the criterion that bounds the junk fraction of the reported samples. It also catches a few
+dominant weights, which make the weighted error spuriously small.
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ from __future__ import annotations
 import dataclasses
 import inspect
 import logging
+import math
 import os
 import pickle
 import shutil
@@ -64,12 +68,6 @@ from slurmcmc.slurm_utils import Cluster, KeepRunDirs, SlurmPool, submit_remote_
 # Helpers and constants
 # ---------------------------------------------------------------------------
 
-def stats_norm_ppf(q: float) -> float:
-    """Standard-normal quantile (kept local so the hot path never imports scipy.stats)."""
-    from scipy import stats
-    return float(stats.norm.ppf(q))
-
-
 # Confinement of an unbounded run (param_bounds=None). Away from its training data a surrogate
 # tends to its trend -- a quadratic that can run off to +inf -- or to a constant, which is
 # improper, and either way the cheap chain walks away. With R the largest Mahalanobis radius of
@@ -80,6 +78,22 @@ def stats_norm_ppf(q: float) -> float:
 _CONFINEMENT_INFLATION = 2.0
 _CONFINEMENT_STRENGTH = 10.0      # penalty scale, in units of the training log-prob range
 _CONFINEMENT_HARD_RADIUS = 10.0
+
+# Sizing of the cheap chain (num_surrogate_iters='auto'). Its length is set by the ESS and L_c/tau
+# floors of its depth once tau is known; tau is measured on every chain, and only the first one of a
+# run starts from a guess: _NOMINAL_TAU_PER_PARAM * num_params, a typical stretch-move tau for a
+# well-shaped posterior. Each is aimed _SIZING_MARGIN past the length its floors need, since tau
+# grows as a short chain is extended.
+_NOMINAL_TAU_PER_PARAM = 10.0
+_SIZING_MARGIN = 1.2
+# The L_c/tau floors of the two depths with 'auto'. Refining: the shortest chain whose own tau can
+# be estimated (emcee's window takes c = 5 tau); that posterior is discarded at the next fit.
+# Verifying: emcee's own rule for a reliable tau, since that posterior is the one reported.
+_AUTO_ITERS_PER_TAU = {'refine': 10.0, 'verify': 50.0}
+# A chain whose L_c/tau has not risen over this many extensions in a row is stopped: its tau grows as
+# fast as the chain, so no length would meet the floors. Two, so that one noisy tau estimate does
+# not end a chain that is in fact converging.
+_STALLED_EXTENSIONS = 2
 
 # The posterior-shift tolerance never falls below this many standard errors of the difference
 # between two finite chains; below that the criterion would be unsatisfiable, not strict.
@@ -102,7 +116,9 @@ class HybridMCMCConfig:
     # an envelope grown from the training data (see _CONFINEMENT_*).
     param_bounds: Optional[List] = None
     constraint_fun: Optional[Union[Callable, Dict]] = None
-    num_expensive_iters: int = 20
+    # Length of the round-0 expensive MCMC: (num_expensive_iters + 1) * num_walkers evaluations.
+    # The user's budget, so there is no default: required unless initial_train_points is given.
+    num_expensive_iters: Optional[int] = None
     # Existing evaluations, shapes (n, num_params) and (n,), e.g. a previous slurm_mcmc's
     # points_history and values_history[:, 0]. Round 0 is skipped; they are not counted in
     # num_expensive_evals.
@@ -111,39 +127,51 @@ class HybridMCMCConfig:
     num_regularization_points: int = 0
     num_expensive_iters_per_round: int = 0  # optional expensive MCMC each round
     surrogate: Union[str, Any] = 'gp'  # 'gp' | 'polynomial' | object with fit(X, y) / predict(X)
-    polynomial_degree: int = 3
-    num_surrogate_iters: int = 2000
+    polynomial_degree: int = 2
+    # Length of the cheap chain. 'auto' sizes it from the autocorrelation time tau: each chain
+    # starts at the length its depth's floors (ESS, L_c/tau) need for a tau already measured -- the
+    # last chain's when refining, the largest of the run when verifying, a nominal 10 * num_params
+    # before any -- and is extended to the length they need for its own re-measured tau, until they
+    # hold. An integer fixes the starting length only.
+    num_surrogate_iters: Union[int, Literal['auto']] = 'auto'
     # Walkers of the cheap chain, independent of the expensive stage. At fixed work W = N_c L_c,
     # ESS = W/tau does not depend on the walker count but L_c/tau falls with it, so None uses
-    # emcee's minimum, 2*num_params + 2.
-    num_surrogate_walkers: Optional[int] = None
+    # emcee's minimum, 2*num_params + 2 ('auto'; None means the same).
+    num_surrogate_walkers: Union[int, Literal['auto'], None] = 'auto'
     surrogate_burnin_fraction: float = 0.2  # discarded before tau and the samples are taken
-    num_validation_points: int = 100
+    # Expensive evaluations per round, also recycled as training data. 'auto' = max(200, 10 d):
+    # 200 resolves the weighted error to ~5% and the weight-efficiency gate to ~0.02, and 10 d is
+    # the points a GP needs to resolve a d-dimensional region.
+    num_validation_points: Union[int, Literal['auto']] = 'auto'
     log_error_threshold: float = 0.1  # posterior-weighted RMS log-prob error, in nats
-    # below this many effective validation points the weighted error is not trusted
-    min_ess_weights: float = 10.0
+    # Floor on the importance-sampling efficiency of the validation weights, ESS_w / N_val, in
+    # (0, 1]: ~ 1 - the fraction of the surrogate posterior where the true one is negligible.
+    # A converged surrogate gives ~exp(-eps^2) ~ 0.99 at eps = 0.1 nats.
+    min_weight_efficiency: float = 0.9
     # Largest change of any parameter's posterior mean or std between rounds, in posterior
-    # standard deviations; never tested below the chains' noise floor. None disables it.
-    posterior_shift_tolerance: Optional[float] = 0.1
-    # ESS floors of the cheap chain: refining (posterior discarded at the next fit; None -> 10 d)
-    # and verifying (posterior reported; None -> 100 d). The chain is extended, up to
-    # max_surrogate_iters_multiplier x num_surrogate_iters, until they hold.
-    refine_surrogate_ess: Optional[float] = None
-    final_surrogate_ess: Optional[float] = None
+    # standard deviations; never tested below the chains' noise floor. None (the default) leaves
+    # convergence to accuracy and weight efficiency; e.g. 0.1 also requires the posterior to have
+    # stopped moving, which catches a surrogate still improving between rounds.
+    posterior_shift_tolerance: Optional[float] = None
+    # ESS floors of the cheap chain: refining (posterior discarded at the next fit; 'auto' -> 10 d)
+    # and verifying (posterior reported; 'auto' -> 100 d). The chain is extended until they hold
+    # (see max_surrogate_iters). None = not demanded.
+    refine_surrogate_ess: Union[float, Literal['auto'], None] = 'auto'
+    verify_surrogate_ess: Union[float, Literal['auto'], None] = 'auto'
     # Rejected verifications allowed before the run gives up and ends; None = unlimited.
     max_verification_attempts: Optional[int] = None
-    # L_c/tau floors of the two depths; None while refining = not demanded, since that posterior
-    # is discarded and tau is unreliable on a short chain anyway.
-    refine_iters_per_tau: Optional[float] = None
-    final_iters_per_tau: float = 50.0
-    max_surrogate_iters_multiplier: int = 8
-    num_rounds_max: int = 5
-    # Stall warning: judged from the trend of log(error) over all rounds, after stall_window of
-    # them, and only when the improvement rate is significantly below stall_relative_improvement
-    # -- a single round's error scatters too much to compare with the previous one.
-    stall_window: int = 12
-    stall_significance: float = 0.05
-    stall_relative_improvement: float = 0.05
+    # L_c/tau floors of the two depths: 'auto' -> 10 while refining, the shortest chain whose own
+    # tau can be estimated, and 50 while verifying, emcee's rule for a reliable tau. None = not
+    # demanded.
+    refine_iters_per_tau: Union[float, Literal['auto'], None] = 'auto'
+    verify_iters_per_tau: Union[float, Literal['auto'], None] = 'auto'
+    # Absolute ceiling on a chain's length, a safety net only. A chain normally stops when its
+    # floors hold, or, when its tau grows as fast as the chain so that no length would meet them,
+    # after _STALLED_EXTENSIONS extensions without progress in L_c/tau. None = no ceiling.
+    max_surrogate_iters: Optional[int] = 1_000_000
+    # A safety cap, meant to be large enough that convergence ends the run first. Each round
+    # costs num_validation_points evaluations, so it also bounds the worst-case budget.
+    num_rounds_max: int = 100
     # warn when this fraction of the posterior lies within bounds_warning_tolerance of a bound
     bounds_warning_fraction: float = 0.10
     bounds_warning_tolerance: float = 0.01
@@ -154,18 +182,21 @@ class HybridMCMCConfig:
     # only slow the fit. Trimming much harder leaves the surrogate without evidence that the
     # probability is low away from the peak. None disables it.
     train_log_prob_trim_range: Optional[float] = 100.0
-    min_train_points_after_trim: int = 50
+    # The trim is skipped when it would leave fewer points than this. 'auto' = 10 d, the points a
+    # GP needs in d dimensions, and at least the polynomial's coefficient count. None = always trim.
+    min_train_points_after_trim: Union[int, Literal['auto'], None] = 'auto'
     # Cap on points entering a fit, whose cost grows roughly as n^2.4. A uniform random subsample,
     # which keeps the far-field points that stop the surrogate extrapolating. None = no cap.
     max_train_points: Optional[int] = None
     train_log_prob_floor: Optional[float] = None  # drop training points with log-prob <= floor (penalty values)
-    # Fitted surrogates in <work_dir>/surrogates/round{k}.pkl: 'latest' keeps one, enough for a
+    # Fitted surrogates in <work_dir>/surrogates/surrogate_round{k}.pkl: 'latest' keeps one, enough for a
     # resumed round to skip its refit; 'all' keeps every round (~8 n^2 bytes each). None = off.
     save_surrogate: Optional[Literal['latest', 'all']] = None
-    # Draws kept per round in <work_dir>/posteriors/round{k}.npy. None = off.
+    # Draws kept per round in <work_dir>/posteriors/posterior_round{k}.npy. None = off.
     save_posterior_samples: Optional[int] = None
     # The restart file holds the training set and diagnostics, not the surrogate (refitted) or
-    # the cheap chain's sampler (only its walker positions); written after round 0 and every round.
+    # the cheap chain's sampler (only its walker positions); written after round 0, after every
+    # round, and when a verification starts (the state before that round, so a resume redoes it).
     save_restart: bool = False
     load_restart: bool = False
     restart_file: str = 'hybrid_restart.pkl'
@@ -221,6 +252,26 @@ class HybridMCMCRunner:
                        'either there is nothing to start the run from.')
             logging.error(err_msg)
             raise ValueError(err_msg)
+        if config.initial_train_points is None and config.num_expensive_iters is None:
+            err_msg = ('num_expensive_iters is required unless initial_train_points is given: it '
+                       'sets the round-0 budget, (num_expensive_iters + 1) * num_walkers expensive '
+                       'evaluations, which only the user can choose.')
+            logging.error(err_msg)
+            raise ValueError(err_msg)
+        for name in ('num_surrogate_iters', 'num_surrogate_walkers', 'num_validation_points',
+                     'refine_surrogate_ess',
+                     'verify_surrogate_ess', 'refine_iters_per_tau', 'verify_iters_per_tau',
+                     'min_train_points_after_trim'):
+            value = getattr(config, name)
+            if isinstance(value, str) and value != 'auto':
+                err_msg = f"{name}={value!r}: use 'auto' or a number."
+                logging.error(err_msg)
+                raise ValueError(err_msg)
+        if not 0.0 <= config.min_weight_efficiency <= 1.0:
+            err_msg = (f'min_weight_efficiency={config.min_weight_efficiency} is a fraction of the '
+                       f'validation points and must lie in [0, 1].')
+            logging.error(err_msg)
+            raise ValueError(err_msg)
         if config.init_points is None and config.num_expensive_iters_per_round > 0:
             err_msg = ('num_expensive_iters_per_round > 0 needs init_points: its length sets the '
                        'number of walkers of the expensive refresh chains.')
@@ -253,6 +304,8 @@ class HybridMCMCRunner:
         self.timings_per_round: List[Dict[str, float]] = []
         self._last_surrogate_iters: int = 0
         self._last_surrogate_tau: float = float('nan')
+        self._max_surrogate_tau: float = float('nan')       # the largest tau measured in the run
+        self._last_surrogate_sufficient: bool = True        # whether the last chain met its floors
         self._last_surrogate_chain_ess: float = float('nan')
         self.num_fit_points_per_round: List[int] = []
         self._resumed: bool = False
@@ -296,8 +349,13 @@ class HybridMCMCRunner:
         ('n_train', 8, 'points actually fitted, after trimming and max_train_points'),
         ('surrogate', 22, 'surrogate class fitted this round'),
         ('w_log_err', 10, 'posterior-weighted RMS log-prob error [nats]'),
+        ('w_eff', 7, 'weight efficiency ESS_w/N_val, ~ 1 - surrogate-posterior fraction where '
+                     'the target is negligible; needs >= min_weight_efficiency'),
         ('post_shift', 11, 'largest parameter mean/std change vs the previous round, in '
                            'posterior standard deviations'),
+        ('shift_tol', 10, 'the tolerance applied to post_shift: posterior_shift_tolerance, raised to '
+                          'the noise floor of two finite chains where that is higher; off when not '
+                          'tested'),
         ('surr_iters', 11, 'cheap-chain length L_c actually run; grows until both chain '
                            'criteria below are met'),
         ('Lc/tau', 8, 'chain length in autocorrelation times; advised >= 50'),
@@ -327,22 +385,39 @@ class HybridMCMCRunner:
         def fmt(value: Any) -> str:
             return 'none' if value is None else str(value)
 
+        # 'auto' settings are shown with what they resolved to for this run
+        resolved = {'num_surrogate_iters': 'sized from tau, per chain',
+                    'num_validation_points': self._num_validation_points(),
+                    'refine_surrogate_ess': f'{self._ess_floor(final=False):g}',
+                    'verify_surrogate_ess': f'{self._ess_floor(final=True):g}',
+                    'refine_iters_per_tau': f'{self._iters_per_tau_floor(final=False):g}',
+                    'verify_iters_per_tau': f'{self._iters_per_tau_floor(final=True):g}',
+                    'num_surrogate_walkers': self._num_surrogate_walkers(),
+                    'min_train_points_after_trim': self._min_train_points_after_trim()}
+
         surrogate_name = (type(self.surrogate).__name__.replace('Surrogate', '')
                           if self.surrogate is not None else str(cfg.surrogate))
         text = 'hybrid surrogate-MCMC diagnostics\n\nrun parameters\n'
         text += row('num_params', self._num_params)
         text += row('num_walkers', fmt(num_walkers))
-        text += row('param_bounds', 'none (unbounded, confinement envelope)'
-                    if self._unbounded else f'{len(cfg.param_bounds)} x [lo, hi]')
+        if self._unbounded:
+            text += row('param_bounds', 'none (unbounded, confinement envelope)')
+        else:
+            # the box itself, so it can be checked against the posterior it constrained
+            for ind_param, (low, high) in enumerate(zip(self._lower, self._upper)):
+                text += row(f'param_bounds[{ind_param}]', f'[{low:.6g}, {high:.6g}]')
         text += row('surrogate', surrogate_name)
         for name in ('num_expensive_iters', 'num_expensive_iters_per_round',
                      'num_regularization_points', 'num_surrogate_iters',
                      'num_validation_points', 'num_rounds_max', 'log_error_threshold',
-                     'posterior_shift_tolerance', 'min_ess_weights', 'refine_surrogate_ess',
-                     'max_surrogate_iters_multiplier', 'surrogate_uncertainty_penalty',
+                     'posterior_shift_tolerance', 'min_weight_efficiency',
+                     'refine_surrogate_ess', 'verify_surrogate_ess', 'refine_iters_per_tau',
+                     'verify_iters_per_tau', 'num_surrogate_walkers',
+                     'max_surrogate_iters', 'surrogate_uncertainty_penalty',
                      'train_log_prob_trim_range', 'min_train_points_after_trim',
                      'max_train_points', 'train_log_prob_floor'):
-            text += row(name, fmt(getattr(cfg, name)))
+            value = getattr(cfg, name)
+            text += row(name, f'auto (= {resolved[name]})' if value == 'auto' else fmt(value))
 
         # num_walkers is always known when a refresh is requested: __init__ refuses otherwise
         num_refresh = ((cfg.num_expensive_iters_per_round + 1) * num_walkers
@@ -356,7 +431,7 @@ class HybridMCMCRunner:
                      f'num_regularization_points are unused\n'
                      f'  => raw training points at the first surrogate fit = {num_seeded}\n'
                      f'  each refinement round then adds num_validation_points = '
-                     f'{cfg.num_validation_points}')
+                     f'{self._num_validation_points()}')
         else:
             num_round0 = (cfg.num_expensive_iters + 1) * num_walkers
             num_first_fit = num_round0 + cfg.num_regularization_points
@@ -367,7 +442,7 @@ class HybridMCMCRunner:
                      f'  => raw training points at the first surrogate fit = {num_round0} + '
                      f'{cfg.num_regularization_points} = {num_first_fit}\n'
                      f'  each refinement round then adds num_validation_points = '
-                     f'{cfg.num_validation_points}')
+                     f'{self._num_validation_points()}')
         if num_refresh:
             text += (f', plus (num_expensive_iters_per_round + 1) * num_walkers = '
                      f'{num_refresh} for the expensive refresh')
@@ -441,7 +516,7 @@ class HybridMCMCRunner:
         trim_range = self.cfg.train_log_prob_trim_range
         if trim_range is not None:
             keep = y > np.max(y) - trim_range
-            if keep.sum() >= self.cfg.min_train_points_after_trim:
+            if keep.sum() >= self._min_train_points_after_trim():
                 if self.cfg.verbosity >= 2 and keep.sum() < len(y):
                     logging.info(f'    trimmed {len(y) - keep.sum()} training points more than '
                                  f'{trim_range} nats below the peak ({keep.sum()} remain).')
@@ -495,11 +570,11 @@ class HybridMCMCRunner:
 
     def _surrogate_path(self, ind_round: int) -> str:
         """Where this round's fit is saved; named after its round in both save modes."""
-        return os.path.join(self.cfg.work_dir, 'surrogates', f'round{ind_round}.pkl')
+        return os.path.join(self.cfg.work_dir, 'surrogates', f'surrogate_round{ind_round}.pkl')
 
     #: the surrogate log's fixed columns; the free-text details column closes each line
     _SURROGATE_LOG_COLUMNS = [('round', 6), ('surrogate', 17), ('n_raw', 7), ('n_trim', 7),
-                              ('n_sub', 6), ('n_fit', 7), ('t_fit_s', 9), ('file', 12)]
+                              ('n_sub', 6), ('n_fit', 7), ('t_fit_s', 9), ('file', 24)]
 
     @staticmethod
     def _surrogate_details(surrogate: Any) -> str:
@@ -578,7 +653,9 @@ class HybridMCMCRunner:
                 # never leaves zero surrogates on disk
                 for name in os.listdir(os.path.dirname(path)):
                     stale = os.path.join(os.path.dirname(path), name)
-                    if name.startswith('round') and name.endswith('.pkl') and stale != path:
+                    # round{k}.pkl is the name used before surrogate_round{k}.pkl
+                    if (name.startswith(('surrogate_round', 'round')) and name.endswith('.pkl')
+                            and stale != path):
                         os.remove(stale)
         except Exception:
             # a surrogate that cannot be pickled (e.g. a user object holding a lambda) must
@@ -590,7 +667,10 @@ class HybridMCMCRunner:
         """A previously saved fit for this exact round and training set, or None."""
         path = self._surrogate_path(ind_round)
         if not os.path.exists(path):
-            return None
+            # a run saved before the files were named surrogate_round{k}.pkl
+            path = os.path.join(os.path.dirname(path), f'round{ind_round}.pkl')
+            if not os.path.exists(path):
+                return None
         try:
             with open(path, 'rb') as f:
                 payload = pickle.load(f)
@@ -772,7 +852,7 @@ class HybridMCMCRunner:
     def _num_surrogate_walkers(self) -> int:
         """Walkers for the cheap chain: the configured count, or emcee's minimum."""
         minimum = 2 * self._num_params + 2  # emcee wants an even count strictly above 2*ndim
-        if self.cfg.num_surrogate_walkers is None:
+        if self.cfg.num_surrogate_walkers in (None, 'auto'):
             return minimum
         nwalkers = int(self.cfg.num_surrogate_walkers)
         if nwalkers < minimum or nwalkers % 2:
@@ -782,6 +862,25 @@ class HybridMCMCRunner:
             return adjusted
         return nwalkers
 
+    def _num_validation_points(self) -> int:
+        """Validation batch size: the configured count, or max(200, 10 d)."""
+        if self.cfg.num_validation_points == 'auto':
+            return max(200, 10 * self._num_params)
+        return int(self.cfg.num_validation_points)
+
+    def _min_train_points_after_trim(self) -> int:
+        """Fewest points the trim may leave: the configured count, or what the surrogate needs."""
+        configured = self.cfg.min_train_points_after_trim
+        if configured is None:
+            return 0
+        if configured != 'auto':
+            return int(configured)
+        minimum = 10 * self._num_params
+        if self.cfg.surrogate == 'polynomial':
+            minimum = max(minimum, math.comb(self._num_params + self.cfg.polynomial_degree,
+                                             self.cfg.polynomial_degree))
+        return minimum
+
     def _chain_burnin(self, num_iters: int) -> int:
         """Steps discarded from the front of this round's chain."""
         return min(int(self.cfg.surrogate_burnin_fraction * num_iters), num_iters - 1)
@@ -790,25 +889,31 @@ class HybridMCMCRunner:
         """Autocorrelation time of this round's chain after burn-in (largest over parameters)."""
         try:
             chain = sampler.get_chain(discard=self._chain_burnin(num_iters))
-            return float(np.max(emcee.autocorr.integrated_time(chain, quiet=True)))
+            # tol=0 skips emcee's own check that the chain is >= 50 tau, which would log a warning
+            # for every refinement chain (short by design); the L_c/tau floors are checked here
+            return float(np.max(emcee.autocorr.integrated_time(chain, tol=0, quiet=True)))
         except Exception:
             return float(num_iters) / 10.0
 
-    def _chain_ess(self, sampler: emcee.EnsembleSampler, num_iters: int) -> float:
-        """Effective sample size of this round's post-burn-in samples."""
-        return len(self._burnin_samples(sampler, num_iters)) / max(self._chain_tau(sampler, num_iters), 1.0)
-
     def _ess_floor(self, final: bool = False) -> float:
-        """Effective-sample-size floor: 10*num_params while refining, 100*num_params to report."""
-        configured = self.cfg.final_surrogate_ess if final else self.cfg.refine_surrogate_ess
-        if configured is not None:
-            return float(configured)
-        return (100.0 if final else 10.0) * self._num_params
+        """Effective-sample-size floor: 'auto' is 10*num_params while refining, 100*num_params to
+        report; None (or 0) means none is demanded."""
+        configured = self.cfg.verify_surrogate_ess if final else self.cfg.refine_surrogate_ess
+        if configured is None:
+            return 0.0
+        if configured == 'auto':
+            return (100.0 if final else 10.0) * self._num_params
+        return float(configured)
 
     def _iters_per_tau_floor(self, final: bool = False) -> float:
-        """Required L_c/tau. Zero means the criterion is not applied at this tier."""
-        configured = self.cfg.final_iters_per_tau if final else self.cfg.refine_iters_per_tau
-        return 0.0 if configured is None else float(configured)
+        """Required L_c/tau: 'auto' is 10 while refining and 50 while verifying; zero means the
+        criterion is not applied at this depth."""
+        configured = self.cfg.verify_iters_per_tau if final else self.cfg.refine_iters_per_tau
+        if configured is None:
+            return 0.0
+        if configured == 'auto':
+            return _AUTO_ITERS_PER_TAU['verify' if final else 'refine']
+        return float(configured)
 
     def _chain_is_sufficient(self, sampler: emcee.EnsembleSampler, num_iters: int,
                              final: bool) -> Tuple[bool, float, float]:
@@ -821,56 +926,97 @@ class HybridMCMCRunner:
         long_enough = (not iters_per_tau) or num_iters >= iters_per_tau * tau
         return bool(enough_samples and long_enough), tau, ess
 
+    def _tau_reference(self, final: bool = False) -> float:
+        """
+        The tau a new chain is sized from: the last chain's, or a nominal one before any. A
+        verification chain takes the largest tau of the run instead: the refinement chain before it
+        is too short to measure tau well, and tau measured on a short chain is biased low.
+        """
+        tau = np.nanmax([self._last_surrogate_tau, self._max_surrogate_tau]) if final \
+            else self._last_surrogate_tau
+        if np.isfinite(tau) and tau > 0:
+            return float(tau)
+        return _NOMINAL_TAU_PER_PARAM * self._num_params
+
+    def _iters_needed(self, tau: float, nwalkers: int, final: bool) -> float:
+        """The chain length the floors of a depth need at autocorrelation time tau: the ESS floor,
+        since ESS = nwalkers (1 - burn-in fraction) L / tau, and the L_c/tau floor."""
+        kept = nwalkers * (1.0 - self.cfg.surrogate_burnin_fraction)
+        return max(self._ess_floor(final) * tau / kept, self._iters_per_tau_floor(final) * tau)
+
     def _run_surrogate_mcmc(self, init_walkers: np.ndarray, sampler: Optional[emcee.EnsembleSampler],
                             final: bool = False):
         """
-        Cheap MCMC on the surrogate, extended in blocks on the same sampler until the criteria
-        of its depth hold: refining (final=False) or verifying (final=True).
+        Cheap MCMC on the surrogate at the depth of its use: refining (final=False) or verifying
+        (final=True). The chain is sized from tau (see num_surrogate_iters) and extended, on the
+        same sampler, to the length the floors need for its re-measured tau until they hold. It
+        stops short of them when its tau grows as fast as it does (_STALLED_EXTENSIONS), or at
+        max_surrogate_iters; self._last_surrogate_sufficient records which.
         """
         cfg = self.cfg
         nwalkers, ndim = init_walkers.shape
         if sampler is None:
             sampler = emcee.EnsembleSampler(nwalkers=nwalkers, ndim=ndim,
                                             log_prob_fn=self._surrogate_log_prob_batch, vectorize=True)
-        ess_floor = self._ess_floor(final=final)
-        state = sampler.run_mcmc(initial_state=init_walkers, nsteps=cfg.num_surrogate_iters,
-                                 skip_initial_state_check=True)
-        num_iters = cfg.num_surrogate_iters
-        max_iters = cfg.num_surrogate_iters * max(1, cfg.max_surrogate_iters_multiplier)
-        sufficient, tau, ess = self._chain_is_sufficient(sampler, num_iters, final)
-        while not sufficient and num_iters < max_iters:
-            extra = min(cfg.num_surrogate_iters, max_iters - num_iters)
-            state = sampler.run_mcmc(initial_state=state, nsteps=extra,
+        tau_reference = self._tau_reference(final)
+        if cfg.num_surrogate_iters == 'auto':
+            # with both floors of the depth switched off, still one autocorrelation time
+            num_iters = int(np.ceil(max(_SIZING_MARGIN * self._iters_needed(tau_reference, nwalkers, final),
+                                        tau_reference, 2)))
+        else:
+            num_iters = int(cfg.num_surrogate_iters)
+        max_iters = np.inf if cfg.max_surrogate_iters is None else int(cfg.max_surrogate_iters)
+        num_iters = int(min(num_iters, max_iters))   # the ceiling bounds the start too
+        if cfg.verbosity >= 2:
+            logging.info(f'    surrogate chain sized from tau = {tau_reference:.0f}: {num_iters} '
+                         f'iterations')
+        # a proposal from a walker at log-prob -inf is compared as -inf - -inf = nan, which emcee
+        # rightly rejects; only numpy's warning about the nan is silenced
+        with np.errstate(invalid='ignore'):
+            state = sampler.run_mcmc(initial_state=init_walkers, nsteps=num_iters,
                                      skip_initial_state_check=True)
+        sufficient, tau, ess = self._chain_is_sufficient(sampler, num_iters, final)
+        best_iters_per_tau = num_iters / max(tau, 1.0)
+        stalled = 0
+        while not sufficient and num_iters < max_iters and stalled < _STALLED_EXTENSIONS:
+            # to the length the floors need at the tau just measured, and at least 25% further,
+            # so that a need met only by rounding still makes progress
+            target = max(int(np.ceil(_SIZING_MARGIN * self._iters_needed(tau, nwalkers, final))),
+                         int(np.ceil(1.25 * num_iters)))
+            extra = int(min(target, max_iters)) - num_iters
+            with np.errstate(invalid='ignore'):
+                state = sampler.run_mcmc(initial_state=state, nsteps=extra,
+                                         skip_initial_state_check=True)
             num_iters += extra
             sufficient, tau, ess = self._chain_is_sufficient(sampler, num_iters, final)
+            iters_per_tau = num_iters / max(tau, 1.0)
+            stalled = 0 if iters_per_tau > best_iters_per_tau else stalled + 1
+            best_iters_per_tau = max(best_iters_per_tau, iters_per_tau)
             if cfg.verbosity >= 2:
                 logging.info(f'    extended the surrogate chain to {num_iters} iterations '
-                             f'(ESS {ess:.0f}, L_c/tau {num_iters / max(tau, 1.0):.0f})')
+                             f'(ESS {ess:.0f}, L_c/tau {iters_per_tau:.0f})')
         self._last_surrogate_iters = num_iters
         self._last_surrogate_tau = tau
+        self._max_surrogate_tau = float(np.nanmax([self._max_surrogate_tau, tau]))
         self._last_surrogate_chain_ess = ess
+        self._last_surrogate_sufficient = sufficient
 
-        # hitting the cap short of a criterion must not pass silently: fewer effective samples
-        # raise the stability test's noise floor, which makes it easier to pass, not harder
+        # stopping short of a floor must not pass silently: fewer effective samples raise the
+        # stability test's noise floor, which makes it easier to pass, not harder
         if cfg.verbosity >= 1 and not sufficient:
-            if ess_floor and ess < ess_floor:
-                logging.warning(
-                    f'    the cheap chain hit its cap of {max_iters} iterations with an effective '
-                    f'sample size of {ess:.0f}, short of the floor of {ess_floor:.0f}. '
-                    f'Posterior stability is therefore being tested '
-                    f'with wider error bars than intended, which makes it easier to pass, not '
-                    f'harder. Raise max_surrogate_iters_multiplier (currently '
-                    f'{cfg.max_surrogate_iters_multiplier}) or lower refine_surrogate_ess deliberately.')
-            iters_per_tau = self._iters_per_tau_floor(final)
-            if iters_per_tau and num_iters < iters_per_tau * tau:
-                logging.warning(
-                    f'    the cheap chain is {num_iters / max(tau, 1.0):.0f} autocorrelation times '
-                    f'long (tau = {tau:.0f}), short of L_c >= {iters_per_tau:.0f} '
-                    f'tau, so tau itself is probably under-estimated and the effective sample size '
-                    f'above is optimistic. This needs a longer chain, not more walkers: raise '
-                    f'num_surrogate_iters or max_surrogate_iters_multiplier, or lower '
-                    f'num_surrogate_walkers (currently {sampler.nwalkers}).')
+            ess_floor, iters_per_tau_floor = self._ess_floor(final), self._iters_per_tau_floor(final)
+            why = (f'reached max_surrogate_iters = {cfg.max_surrogate_iters}' if num_iters >= max_iters
+                   else f'stopped: over its last {_STALLED_EXTENSIONS} extensions L_c/tau did not '
+                        f'rise, so tau grows as fast as the chain and no length would meet the floors')
+            logging.warning(
+                f'    the {"verification" if final else "refinement"} chain {why}. At {num_iters} '
+                f'iterations, tau = {tau:.0f}: ESS {ess:.0f} against a floor of {ess_floor:.0f}, '
+                f'L_c/tau {num_iters / max(tau, 1.0):.0f} against {iters_per_tau_floor:.0f}. The '
+                f'surrogate posterior has a slowly mixing direction, such as a long arm the walkers '
+                f'visit rarely.'
+                + (' This verification is therefore not accepted; lower verify_iters_per_tau or '
+                   'verify_surrogate_ess deliberately if this depth is out of reach for the target.'
+                   if final else ''))
         return sampler, state
 
     def _burnin_samples(self, sampler: emcee.EnsembleSampler, num_iters: int) -> np.ndarray:
@@ -886,7 +1032,7 @@ class HybridMCMCRunner:
         """
         cfg = self.cfg
         unique_samples = np.unique(samples, axis=0)
-        num_val = min(cfg.num_validation_points, len(unique_samples))
+        num_val = min(self._num_validation_points(), len(unique_samples))
         val_inds = np.random.choice(len(unique_samples), size=num_val, replace=False)
         validation_points = unique_samples[val_inds]
         log_prob_expensive = self._evaluate_expensive_batch(validation_points, stage_name)
@@ -945,15 +1091,15 @@ class HybridMCMCRunner:
             w_sum = float(len(d))
         w_norm = w / w_sum
 
-        # how many points effectively carry the weight
-        ess_weights = float(1.0 / np.sum(w_norm ** 2))
+        # the fraction of the batch that effectively carries the weight (Kish efficiency)
+        effective_count = float(1.0 / np.sum(w_norm ** 2))
 
         # posterior-weighted RMS error about the weighted mean, in nats
         d_mean = float(np.sum(w_norm * d))
         weighted_log_error = float(np.sqrt(np.sum(w_norm * (d - d_mean) ** 2)))
 
         return {'weighted_log_error': weighted_log_error,
-                'ess_weights': ess_weights,
+                'weight_efficiency': min(1.0, effective_count / max(len(d), 1)),  # rounding
                 'log_weight_std': float(np.std(d))}
 
     @staticmethod
@@ -970,92 +1116,52 @@ class HybridMCMCRunner:
         return float(np.max(np.maximum(np.abs(mean_new - mean_old) / scale,
                                        np.abs(std_new - std_old) / scale)))
 
+    def _shift_tolerance(self, metrics: Dict[str, float]) -> float:
+        """The tolerance actually applied to the posterior shift: posterior_shift_tolerance, raised
+        to the noise floor of two finite chains where that is higher; NaN when the test is off."""
+        if self.cfg.posterior_shift_tolerance is None:
+            return float('nan')
+        return max(self.cfg.posterior_shift_tolerance, metrics.get('posterior_noise_floor', 0.0))
+
+    def _shift_tolerance_note(self, metrics: Dict[str, float]) -> str:
+        """The log's note on the shift test: its applied tolerance and noise floor, or that it is off."""
+        if self.cfg.posterior_shift_tolerance is None:
+            return 'test off'
+        return (f'tolerance {self._shift_tolerance(metrics):.3f}, '
+                f'of which noise floor {metrics.get("posterior_noise_floor", 0.0):.3f}')
+
     def _blocking_criteria(self, metrics: Dict[str, float]) -> List[str]:
         """Which criteria are currently unmet -- names the actual bottleneck of a round."""
         cfg = self.cfg
         blocking = []
         if metrics['weighted_log_error'] > cfg.log_error_threshold:
             blocking.append('accuracy')
-        if metrics['ess_weights'] < cfg.min_ess_weights:
-            blocking.append('weight-degeneracy')
+        if not self._weights_usable(metrics):
+            blocking.append('weight-efficiency')
         if (cfg.posterior_shift_tolerance is not None
-                and metrics.get('posterior_displacement', float('inf'))
-                > max(cfg.posterior_shift_tolerance, metrics.get('posterior_noise_floor', 0.0))):
+                and metrics.get('posterior_displacement', float('inf')) > self._shift_tolerance(metrics)):
             blocking.append('posterior-stability')
         return blocking
 
+    def _weights_usable(self, metrics: Dict[str, float]) -> bool:
+        """The weight-efficiency criterion."""
+        return metrics['weight_efficiency'] >= self.cfg.min_weight_efficiency
+
     def _is_converged(self, metrics: Dict[str, float]) -> bool:
         cfg = self.cfg
-        # a few dominant weights make the weighted error spuriously small: never converged then
-        weights_usable = metrics['ess_weights'] >= cfg.min_ess_weights
+        # surrogate mass where the target has none is invisible to the weighted error, and a few
+        # dominant weights make it spuriously small: never converged then
+        weights_usable = self._weights_usable(metrics)
         if not weights_usable and cfg.verbosity >= 1:
             logging.warning(
-                f'    importance weights are degenerate (effective count '
-                f'{metrics["ess_weights"]:.1f} < {cfg.min_ess_weights}): the weighted '
-                f'error is not meaningful, treating this round as not converged.')
+                f'    importance weights are too uneven (efficiency '
+                f'{metrics["weight_efficiency"]:.3f} < {cfg.min_weight_efficiency}): part of the surrogate '
+                f'posterior lies where the target is negligible, or a few points dominate the '
+                f'weighted error; treating this round as not converged.')
         err_ok = weights_usable and metrics['weighted_log_error'] <= cfg.log_error_threshold
         stable_ok = (cfg.posterior_shift_tolerance is None
-                     or metrics.get('posterior_displacement', float('inf'))
-                     <= max(cfg.posterior_shift_tolerance, metrics.get('posterior_noise_floor', 0.0)))
+                     or metrics.get('posterior_displacement', float('inf')) <= self._shift_tolerance(metrics))
         return err_ok and stable_ok
-
-    @staticmethod
-    def _error_trend(errors: List[float]) -> Dict[str, float]:
-        """
-        Least-squares trend of log(error) against round index.
-
-        ``rate`` is d log(eps)/d round, so it is negative while the surrogate is improving
-        and ``1 - exp(rate)`` is the fractional improvement per round.
-        """
-        from scipy import stats
-
-        y = np.log(np.asarray(errors, dtype=float))
-        x = np.arange(len(y), dtype=float)
-        fit = stats.linregress(x, y)
-        return {'rate': float(fit.slope), 'stderr': float(fit.stderr),
-                'improvement_per_round': float(1.0 - np.exp(fit.slope))}
-
-    def _warn_if_stalled(self, error_per_round: List[float], converged: bool) -> None:
-        """
-        Warn when refinement is demonstrably not paying for itself.
-
-        eps scatters by a factor of ~2 between rounds, so progress is read from the trend of
-        log(eps) over the whole history, and the warning needs positive evidence that the
-        improvement rate is below stall_relative_improvement -- noise stays silent.
-        """
-        cfg = self.cfg
-        if converged or len(error_per_round) < cfg.stall_window:
-            return
-        errors = [e for e in error_per_round if np.isfinite(e) and e > 0]
-        if len(errors) < cfg.stall_window:
-            return
-
-        trend = self._error_trend(errors)
-        rate, stderr = trend['rate'], trend['stderr']
-        if not np.isfinite(stderr) or stderr <= 0:
-            return
-
-        # the rate the user would consider worth paying for, as a (negative) log rate
-        useful_rate = np.log(1.0 - cfg.stall_relative_improvement)
-        # one-sided z for "the true rate is worse than useful_rate"
-        z = float(stats_norm_ppf(1.0 - cfg.stall_significance))
-        if rate <= useful_rate + z * stderr:
-            return  # cannot demonstrate inadequate progress; say nothing
-
-        latest = error_per_round[-1]
-        rounds_needed = ((np.log(cfg.log_error_threshold) - np.log(latest)) / rate
-                         if rate < 0 and latest > 0 else float('inf'))
-        outlook = (f'at the fitted rate that is about {rounds_needed:.0f} more rounds to reach '
-                   f'{cfg.log_error_threshold}'
-                   if np.isfinite(rounds_needed) else 'at the fitted rate it never gets there')
-        logging.warning(
-            f'    refinement is not improving fast enough to be worth continuing: over '
-            f'{len(errors)} rounds weighted_log_error is changing by '
-            f'{100 * trend["improvement_per_round"]:+.1f}% per round (target: at least '
-            f'{100 * cfg.stall_relative_improvement:.0f}% improvement per round), and '
-            f'{outlook}. Either the surrogate cannot represent this target much better, or '
-            f'the new training points are landing where they add little — inspect where the '
-            f'error lives before spending more rounds.')
 
     def _warn_if_posterior_at_bounds(self, samples: np.ndarray) -> None:
         """Warn when posterior mass piles up against param_bounds (or the confinement envelope)."""
@@ -1097,7 +1203,7 @@ class HybridMCMCRunner:
     # ------------------------------------------------------------------
 
     #: keys of the per-round accumulators carried across a restart
-    _ACCUMULATOR_KEYS = ('weighted_log_error_per_round',
+    _ACCUMULATOR_KEYS = ('weighted_log_error_per_round', 'weight_efficiency_per_round',
                          'log_weight_std_per_round', 'surrogate_std_per_round',
                          'posterior_displacement_per_round', 'blocking_per_round',
                          'surrogate_ess_per_round', 'surrogate_iters_per_round',
@@ -1135,15 +1241,19 @@ class HybridMCMCRunner:
             if len(samples) > num_samples:
                 kept = np.random.default_rng(0).choice(len(samples), num_samples, replace=False)
                 samples = samples[kept]
-            np.save(os.path.join(directory, f'round{ind_round}.npy'), samples)
+            np.save(os.path.join(directory, f'posterior_round{ind_round}.npy'), samples)
         except OSError as e:
             logging.warning(f'could not save posterior samples for round {ind_round}: {e}')
 
     def _save_restart(self, ini_round: int, accumulators: Dict[str, list],
                       init_walkers: np.ndarray, samples_previous_round: Optional[np.ndarray],
                       ess_previous_round: Optional[float] = None,
-                      converged: bool = False) -> None:
-        """Write the state needed to resume at ``ini_round``. Atomic (see save_restart_file)."""
+                      converged: bool = False,
+                      num_fit_points_per_round: Optional[List[int]] = None) -> None:
+        """
+        Write the state needed to resume at ``ini_round``. Atomic (see save_restart_file).
+        num_fit_points_per_round overrides the runner's own, for a save from inside a round.
+        """
         cfg = self.cfg
         if not cfg.save_restart:
             return
@@ -1165,7 +1275,9 @@ class HybridMCMCRunner:
                                   {'mean': np.mean(samples_previous_round, axis=0),
                                    'std': np.std(samples_previous_round, axis=0),
                                    'ess': ess_previous_round}),
-            'num_fit_points_per_round': list(self.num_fit_points_per_round),
+            'num_fit_points_per_round': list(self.num_fit_points_per_round
+                                             if num_fit_points_per_round is None
+                                             else num_fit_points_per_round),
             'timings': dict(self.timings),
             'timings_per_round': list(self.timings_per_round),
             # taken after the round's last random draw, so a resume reproduces an uninterrupted run
@@ -1205,6 +1317,14 @@ class HybridMCMCRunner:
             else:
                 fill = False if key == 'verified_per_round' else float('nan')
                 accumulators[key][:] = [fill] * num_previous_rounds
+        # the next chain is sized from the last one's tau, as it would be had the run not stopped
+        taus = [t for t in accumulators['surrogate_tau_per_round'] if np.isfinite(t) and t > 0]
+        if taus:
+            self._last_surrogate_tau = float(taus[-1])
+        all_taus = taus + [r['surrogate_tau'] for r in accumulators['round_records']
+                           if np.isfinite(r.get('surrogate_tau', np.nan))]
+        if all_taus:
+            self._max_surrogate_tau = float(max(all_taus))
         # changing settings on resume is legitimate, but has to be reported
         saved_config = status.get('config_snapshot') or {}
         current_config = self._config_snapshot()
@@ -1269,6 +1389,7 @@ class HybridMCMCRunner:
             self.constraint_fun = deferred_import_function_wrapper(cfg.constraint_fun)
 
         weighted_log_error_per_round: List[float] = []
+        weight_efficiency_per_round: List[float] = []
         log_weight_std_per_round: List[float] = []
         surrogate_std_per_round: List[float] = []
         surrogate_tau_per_round: List[float] = []
@@ -1285,6 +1406,7 @@ class HybridMCMCRunner:
         diagnostics_rows: List[Dict[str, Any]] = []
         accumulators = {
             'weighted_log_error_per_round': weighted_log_error_per_round,
+            'weight_efficiency_per_round': weight_efficiency_per_round,
             'log_weight_std_per_round': log_weight_std_per_round,
             'surrogate_std_per_round': surrogate_std_per_round,
             'surrogate_tau_per_round': surrogate_tau_per_round,
@@ -1365,6 +1487,9 @@ class HybridMCMCRunner:
 
         for ind_round in range(ini_round, cfg.num_rounds_max + 1):
             t_start_round = time.time()
+            # the per-round lists as they stood before this round, for a save from inside it
+            round_start_lengths = {key: len(values) for key, values in accumulators.items()}
+            num_fits_before_round = len(self.num_fit_points_per_round)
             if cfg.verbosity >= 1:
                 logging.info(f'--- hybrid: refinement round {ind_round}/{cfg.num_rounds_max} '
                              f'({len(self.train_y)} training points).')
@@ -1381,7 +1506,7 @@ class HybridMCMCRunner:
             time_surrogate_mcmc = time.time() - t_start
             if cfg.verbosity >= 1:
                 logging.info(f'    surrogate MCMC ({self._last_surrogate_iters} iters, '
-                             f'ESS {self._chain_ess(sampler, self._last_surrogate_iters):.0f}'
+                             f'ESS {self._last_surrogate_chain_ess:.0f}'
                              f'/{self._ess_floor():.0f}): {time_surrogate_mcmc:.2f}s.')
 
             # validation: expensive evaluations on held-out surrogate-posterior samples
@@ -1402,6 +1527,7 @@ class HybridMCMCRunner:
             time_validation = time.time() - t_start
 
             weighted_log_error_per_round.append(metrics['weighted_log_error'])
+            weight_efficiency_per_round.append(metrics['weight_efficiency'])
             log_weight_std_per_round.append(metrics['log_weight_std'])
             surrogate_std_per_round.append(metrics['surrogate_std_median'])
             posterior_displacement_per_round.append(metrics['posterior_displacement'])
@@ -1409,22 +1535,28 @@ class HybridMCMCRunner:
                 logging.info(f'    validation ({num_val} expensive evals): {time_validation:.2f}s.')
                 logging.info(f'    weighted_log_error = {metrics["weighted_log_error"]:.4f} nats '
                              f'(threshold {cfg.log_error_threshold}), '
+                             f'weight efficiency = {metrics["weight_efficiency"]:.3f} '
+                             f'(floor {cfg.min_weight_efficiency}), '
                              f'surrogate std = {metrics["surrogate_std_median"]:.4f} nats, '
                              f'posterior shift = {metrics["posterior_displacement"]:.3f} sd '
-                             f'(tolerance {max(cfg.posterior_shift_tolerance or 0.0, metrics["posterior_noise_floor"]):.3f}, '
-                             f'of which noise floor {metrics["posterior_noise_floor"]:.3f}).')
+                             f'({self._shift_tolerance_note(metrics)}).')
 
             # verification overwrites `metrics`, so keep the refinement pass's row now
             refinement_record = {'round': ind_round, 'verified': False,
                                  'weighted_log_error': metrics['weighted_log_error'],
+                                 'weight_efficiency': metrics['weight_efficiency'],
                                  'posterior_displacement': metrics['posterior_displacement'],
+                                 'posterior_shift_tolerance': self._shift_tolerance(metrics),
                                  'surrogate_iters': self._last_surrogate_iters,
                                  'surrogate_tau': tau_samples,
                                  'chain_ess': num_effective_samples}
             refinement_row = {
                 'round': ind_round,
                 'w_log_err': f'{metrics["weighted_log_error"]:.4f}',
+                'w_eff': f'{metrics["weight_efficiency"]:.3f}',
                 'post_shift': f'{metrics["posterior_displacement"]:.3f}',
+                'shift_tol': ('off' if cfg.posterior_shift_tolerance is None
+                              else f'{self._shift_tolerance(metrics):.3f}'),
                 'surr_iters': self._last_surrogate_iters,
                 'Lc/tau': f'{self._last_surrogate_iters / max(tau_samples, 1.0):.1f}',
                 'ess/tau': f'{num_effective_samples:.0f}',
@@ -1447,12 +1579,30 @@ class HybridMCMCRunner:
                 # recycle the refinement batch now, before verification replaces it; it cannot
                 # bias the verification, which scores the surrogate already fitted
                 self._add_training_points(validation_points, log_prob_expensive)
+                common = {'n_expensive': num_train_points_per_round[-1],
+                          'n_train': self.num_fit_points_per_round[-1],
+                          'surrogate': type(self.surrogate).__name__.replace('Surrogate', ''),
+                          't_fit_s': f'{time_fit:.1f}'}
+                # Verification is usually the longest stretch of a round, so record what is known
+                # before it starts. The diagnostics show the refinement row and a placeholder for
+                # the verification; the end of the round replaces both.
+                self._write_diagnostics(diagnostics_rows + [
+                    {**refinement_row, **common},
+                    {'round': f'{ind_round}v', 'w_log_err': 'verifying'}])
+                # The restart is the state before this round, with the refinement batch already
+                # in the training set: a resume redoes the round on the larger set, so the batch's
+                # expensive evaluations are kept and no round is recorded twice.
+                self._save_restart(
+                    ind_round, {key: values[:round_start_lengths[key]]
+                                for key, values in accumulators.items()},
+                    init_walkers, samples_previous_round, ess_previous_round,
+                    num_fit_points_per_round=self.num_fit_points_per_round[:num_fits_before_round])
                 if cfg.verbosity >= 1:
                     logging.info(
                         f'    provisionally converged; verification '
                         f'{verification_attempts}/{cfg.max_verification_attempts}: re-sampling the '
                         f'surrogate to reporting depth (ESS floor {self._ess_floor(final=True):.0f}, '
-                        f'L_c >= {cfg.final_iters_per_tau:.0f} tau).')
+                        f'L_c >= {self._iters_per_tau_floor(final=True):.0f} tau).')
                 t_start = time.time()
                 sampler, state = self._run_surrogate_mcmc(init_walkers, None, final=True)
                 init_walkers = state.coords
@@ -1474,11 +1624,14 @@ class HybridMCMCRunner:
                 unique_samples = scored['unique_samples']
                 num_val = scored['num_val']
                 time_validation += time.time() - t_start
-                converged = self._is_converged(metrics)
+                # a verification chain short of its floors overstates its effective samples, so its
+                # stability test is too lenient: such a verification is never accepted
+                converged = self._is_converged(metrics) and self._last_surrogate_sufficient
 
                 # the verification measures this same round, better; it replaces the round's
                 # recorded metrics rather than adding a phantom round
                 weighted_log_error_per_round[-1] = metrics['weighted_log_error']
+                weight_efficiency_per_round[-1] = metrics['weight_efficiency']
                 log_weight_std_per_round[-1] = metrics['log_weight_std']
                 surrogate_std_per_round[-1] = metrics['surrogate_std_median']
                 posterior_displacement_per_round[-1] = metrics['posterior_displacement']
@@ -1487,8 +1640,10 @@ class HybridMCMCRunner:
                         f'    verification: {self._last_surrogate_iters} iters, ESS '
                         f'{num_effective_samples:.0f}, weighted_log_error = '
                         f'{metrics["weighted_log_error"]:.4f}, posterior shift = '
-                        f'{metrics["posterior_displacement"]:.3f} -> '
-                        f'{"accepted" if converged else "rejected, refining again"}.')
+                        f'{metrics["posterior_displacement"]:.3f} sd '
+                        f'({self._shift_tolerance_note(metrics)}) -> '
+                        f'{"accepted" if converged else "rejected, refining again"}'
+                        f'{"" if self._last_surrogate_sufficient else " (chain short of its floors)"}.')
 
             elif converged:
                 # no verification attempts left: an unverified pass is not a pass, and no later
@@ -1507,6 +1662,8 @@ class HybridMCMCRunner:
             ess_previous_round = num_effective_samples
             self._save_posterior_samples(ind_round, samples)
             blocking = self._blocking_criteria(metrics)
+            if verified_this_round and not self._last_surrogate_sufficient:
+                blocking.append('chain-depth')
             blocking_per_round.append(blocking)
             surrogate_ess_per_round.append(num_effective_samples)
             surrogate_iters_per_round.append(self._last_surrogate_iters)
@@ -1514,7 +1671,6 @@ class HybridMCMCRunner:
             verified_per_round.append(verified_this_round)
             if cfg.verbosity >= 1 and not converged:
                 logging.info(f'    not converged; blocking criteria: {", ".join(blocking)}')
-            self._warn_if_stalled(weighted_log_error_per_round, converged)
             time_refresh = 0.0
 
             if not converged:
@@ -1542,7 +1698,9 @@ class HybridMCMCRunner:
                 round_records.append(refinement_record)
             round_records.append({'round': ind_round, 'verified': verified_this_round,
                                   'weighted_log_error': metrics['weighted_log_error'],
+                                  'weight_efficiency': metrics['weight_efficiency'],
                                   'posterior_displacement': metrics['posterior_displacement'],
+                                  'posterior_shift_tolerance': self._shift_tolerance(metrics),
                                   'surrogate_iters': self._last_surrogate_iters,
                                   'surrogate_tau': tau_samples,
                                   'chain_ess': num_effective_samples})
@@ -1561,7 +1719,10 @@ class HybridMCMCRunner:
                 **({} if verified_this_round else common),  # already on the refinement row
                 'round': f'{ind_round}v' if verified_this_round else ind_round,
                 'w_log_err': f'{metrics["weighted_log_error"]:.4f}',
+                'w_eff': f'{metrics["weight_efficiency"]:.3f}',
                 'post_shift': f'{metrics["posterior_displacement"]:.3f}',
+                'shift_tol': ('off' if cfg.posterior_shift_tolerance is None
+                              else f'{self._shift_tolerance(metrics):.3f}'),
                 'surr_iters': self._last_surrogate_iters,
                 'Lc/tau': f'{self._last_surrogate_iters / max(tau_samples, 1.0):.1f}',
                 'ess/tau': f'{num_effective_samples:.0f}',
@@ -1593,6 +1754,7 @@ class HybridMCMCRunner:
             'validation_points': validation_points,
             'log_importance_weights': log_importance_weights,  # for the final validation subset
             'weighted_log_error_per_round': weighted_log_error_per_round,
+            'weight_efficiency_per_round': weight_efficiency_per_round,
             'log_weight_std_per_round': log_weight_std_per_round,
             'surrogate_std_per_round': surrogate_std_per_round,
             'surrogate_tau_per_round': surrogate_tau_per_round,
@@ -1629,30 +1791,30 @@ def slurm_mcmc_hybrid(
         init_points: Optional[np.ndarray] = None,
         param_bounds: Optional[List] = None,
         constraint_fun: Optional[Union[Callable, Dict]] = None,
-        num_expensive_iters: int = 20,
+        num_expensive_iters: Optional[int] = None,
         initial_train_points: Optional[np.ndarray] = None,
         initial_train_values: Optional[np.ndarray] = None,
         num_regularization_points: int = 0,
         num_expensive_iters_per_round: int = 0,
         surrogate: Union[str, Any] = 'gp',
-        polynomial_degree: int = 3,
-        num_surrogate_iters: int = 2000,
-        num_surrogate_walkers: Optional[int] = None,
-        final_surrogate_ess: Optional[float] = None,
+        polynomial_degree: int = 2,
+        num_surrogate_iters: Union[int, Literal['auto']] = 'auto',
+        num_surrogate_walkers: Union[int, Literal['auto'], None] = 'auto',
+        verify_surrogate_ess: Union[float, Literal['auto'], None] = 'auto',
         max_verification_attempts: Optional[int] = None,
-        refine_iters_per_tau: Optional[float] = None,
-        final_iters_per_tau: float = 50.0,
+        refine_iters_per_tau: Union[float, Literal['auto'], None] = 'auto',
+        verify_iters_per_tau: Union[float, Literal['auto'], None] = 'auto',
         surrogate_burnin_fraction: float = 0.2,
-        num_validation_points: int = 100,
+        num_validation_points: Union[int, Literal['auto']] = 'auto',
         surrogate_uncertainty_penalty: float = 1.0,
         log_error_threshold: float = 0.1,
-        min_ess_weights: float = 10.0,
-        posterior_shift_tolerance: Optional[float] = 0.1,
-        refine_surrogate_ess: Optional[float] = None,
-        max_surrogate_iters_multiplier: int = 8,
-        num_rounds_max: int = 5,
+        min_weight_efficiency: float = 0.9,
+        posterior_shift_tolerance: Optional[float] = None,
+        refine_surrogate_ess: Union[float, Literal['auto'], None] = 'auto',
+        max_surrogate_iters: Optional[int] = 1_000_000,
+        num_rounds_max: int = 100,
         train_log_prob_trim_range: Optional[float] = 100.0,
-        min_train_points_after_trim: int = 50,
+        min_train_points_after_trim: Union[int, Literal['auto'], None] = 'auto',
         max_train_points: Optional[int] = None,
         train_log_prob_floor: Optional[float] = None,
         save_surrogate: Optional[Literal['latest', 'all']] = None,
@@ -1708,9 +1870,24 @@ def slurm_mcmc_hybrid(
         (default) keeps everything, for investigating crashes or re-using the points' own output
         files; 'failed' keeps only batches with a failed evaluation; 'none' removes them all.
         Every point and result is appended to points_history.txt / values_history.txt either way.
+    num_expensive_iters : int
+        Length of the round-0 expensive MCMC, costing (num_expensive_iters + 1) * num_walkers
+        evaluations. Required unless initial_train_points is given.
     log_error_threshold : float
         Convergence threshold on the posterior-weighted RMS error of the surrogate
         log-probability, in nats (0.02 means "probability ratios accurate to ~2%").
+    min_weight_efficiency : float in [0, 1]
+        Floor on the importance-sampling efficiency of the validation weights, ESS_w / N_val.
+        It is ~ 1 - the fraction of the surrogate posterior lying where the target is
+        negligible, which the weighted error cannot see. Default 0.9.
+    num_rounds_max : int
+        Safety cap on the refinement rounds (default 100), meant to be large enough that
+        convergence ends the run first; it also bounds the worst-case expensive budget.
+    'auto' settings
+        num_surrogate_iters, num_validation_points, num_surrogate_walkers, refine_surrogate_ess,
+        verify_surrogate_ess, refine_iters_per_tau, verify_iters_per_tau and
+        min_train_points_after_trim default to 'auto', a documented rule; the diagnostics file shows
+        what each resolved to. None, where accepted, switches a criterion off.
     num_expensive_iters_per_round : int
         If > 0, each refinement round also runs this many expensive MCMC steps
         initialized from the current surrogate posterior (extra training data
@@ -1736,18 +1913,18 @@ def slurm_mcmc_hybrid(
         surrogate=surrogate, polynomial_degree=polynomial_degree,
         num_surrogate_iters=num_surrogate_iters,
         num_surrogate_walkers=num_surrogate_walkers,
-        final_surrogate_ess=final_surrogate_ess,
+        verify_surrogate_ess=verify_surrogate_ess,
         max_verification_attempts=max_verification_attempts,
         refine_iters_per_tau=refine_iters_per_tau,
-        final_iters_per_tau=final_iters_per_tau,
+        verify_iters_per_tau=verify_iters_per_tau,
         surrogate_burnin_fraction=surrogate_burnin_fraction,
         num_validation_points=num_validation_points,
         surrogate_uncertainty_penalty=surrogate_uncertainty_penalty,
         log_error_threshold=log_error_threshold,
-        min_ess_weights=min_ess_weights,
+        min_weight_efficiency=min_weight_efficiency,
         posterior_shift_tolerance=posterior_shift_tolerance,
         refine_surrogate_ess=refine_surrogate_ess,
-        max_surrogate_iters_multiplier=max_surrogate_iters_multiplier,
+        max_surrogate_iters=max_surrogate_iters,
         num_rounds_max=num_rounds_max,
         train_log_prob_trim_range=train_log_prob_trim_range,
         min_train_points_after_trim=min_train_points_after_trim,

@@ -176,9 +176,13 @@ class MCMCRunner:
             if cfg.verbosity >= 1 and np.mod(curr_iter, cfg.print_iter_interval) == 0:
                 logging.info('### curr mcmc iter: ' + str(curr_iter))
             t_start_iter = time.time()
-            state = self.sampler.run_mcmc(initial_state=self.sampler.initial_state, nsteps=1,
-                                          progress=cfg.progress,
-                                          skip_initial_state_check=cfg.skip_initial_state_check)
+            # a proposal from a walker at log-prob -inf (a failed or out-of-bounds point) is
+            # compared as -inf - -inf = nan, which emcee rightly rejects; only numpy's warning
+            # about the nan is silenced
+            with np.errstate(invalid='ignore'):
+                state = self.sampler.run_mcmc(initial_state=self.sampler.initial_state, nsteps=1,
+                                              progress=cfg.progress,
+                                              skip_initial_state_check=cfg.skip_initial_state_check)
             curr_iter_time = time.time() - t_start_iter
             if cfg.verbosity >= 2 and np.mod(curr_iter, cfg.print_iter_interval) == 0:
                 logging.info(f'    current iter run time: {curr_iter_time:.3f}s.')

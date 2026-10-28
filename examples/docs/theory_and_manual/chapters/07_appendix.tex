@@ -56,7 +56,7 @@ These arguments configure how evaluations are dispatched, recorded and resumed
   $\pexp$, $\psur$                    & expensive and surrogate posterior densities \\
   $d_i$, $w_i$                        & log-ratio $\log\pexp - \log\psur$ at a validation point, and its importance weight $e^{d_i}$ \\
   $\varepsilon$                       & posterior-weighted RMS error of the surrogate log-probability, in nats \\
-  $\ESSw$                             & effective number of validation points carrying the importance weights \\
+  $\effw$                             & weight efficiency: fraction of the validation points effectively carrying the importance weights \\
   $\delta$                            & posterior shift between rounds, in posterior standard deviations \\
   $\mu$, $\sigma$, $\kappa$           & surrogate prediction, its uncertainty, and the uncertainty penalty \\
   $R$                                 & largest Mahalanobis radius of the training points (confinement envelope) \\

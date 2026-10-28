@@ -96,7 +96,7 @@ def test_hybrid_mcmc_polynomial_surrogate(verbosity, seed, init_points):
                                num_expensive_iters=15,
                                num_surrogate_iters=500, num_validation_points=50,
                                num_rounds_max=4,
-                               cluster='local-map', verbosity=verbosity)
+                               cluster='local-map', posterior_shift_tolerance=0.1, verbosity=verbosity)
 
     # A degree-2 polynomial matches the quadratic log-prob exactly, so the surrogate is
     # accurate immediately; convergence still takes 2 rounds because the posterior-stability
@@ -129,13 +129,13 @@ def test_accuracy_metrics_degenerate_weights_are_flagged():
     log_prob_surrogate = np.zeros(150)
     m = HybridMCMCRunner._accuracy_metrics(log_prob_expensive, log_prob_surrogate)
     assert m['weighted_log_error'] < 1e-6  # deceptively "perfect" despite a terrible surrogate
-    assert m['ess_weights'] == pytest.approx(1.0, rel=1e-6)   # but only 1 effective point
+    assert m['weight_efficiency'] == pytest.approx(1.0 / 150, rel=1e-6)  # 1 effective point
 
     # a healthy case is not flagged
     rng = np.random.default_rng(0)
     d = rng.normal(scale=0.03, size=150)
     m2 = HybridMCMCRunner._accuracy_metrics(d, np.zeros(150))
-    assert m2['ess_weights'] > 100
+    assert m2['weight_efficiency'] > 0.99
     assert m2['weighted_log_error'] == pytest.approx(0.03, rel=0.4)
 
 
@@ -188,7 +188,7 @@ def test_training_trim_is_skipped_when_too_few_points_remain(seed):
     """An over-aggressive trim must not be applied — leaving the surrogate with almost no
     data is far worse than keeping the far-field points."""
     from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
-    cfg = HybridMCMCConfig(log_prob_fun=log_prob_gaussian, init_points=np.zeros((4, 2)),
+    cfg = HybridMCMCConfig(log_prob_fun=log_prob_gaussian, init_points=np.zeros((4, 2)), num_expensive_iters=5,
                            param_bounds=param_bounds,
                            train_log_prob_trim_range=1e-6,  # would keep ~nothing
                            min_train_points_after_trim=50, verbosity=0)
@@ -224,9 +224,9 @@ def test_surrogate_chain_extended_to_reach_min_ess(verbosity, seed, init_points)
                                num_expensive_iters=10,
                                num_surrogate_iters=200,     # deliberately short
                                num_validation_points=30,
-                               refine_surrogate_ess=400, max_surrogate_iters_multiplier=30,
+                               refine_surrogate_ess=400,
                                num_rounds_max=3,
-                               cluster='local-map', verbosity=verbosity)
+                               cluster='local-map', posterior_shift_tolerance=0.1, verbosity=verbosity)
     # the chain was extended beyond the requested length to reach the ESS floor
     assert max(result['surrogate_iters_per_round']) > 200
     assert max(result['surrogate_ess_per_round']) >= 400
@@ -236,7 +236,7 @@ def test_max_train_points_caps_the_fit_and_keeps_coverage(seed):
     """The cap bounds the O(n^3) fit; the retained points must still span the whole region,
     which a top-N-by-log-prob rule would not preserve."""
     from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
-    cfg = HybridMCMCConfig(log_prob_fun=log_prob_gaussian, init_points=np.zeros((4, 2)),
+    cfg = HybridMCMCConfig(log_prob_fun=log_prob_gaussian, init_points=np.zeros((4, 2)), num_expensive_iters=5,
                            param_bounds=param_bounds, max_train_points=100,
                            train_log_prob_trim_range=None, verbosity=0)
     runner = HybridMCMCRunner(cfg)
@@ -247,81 +247,6 @@ def test_max_train_points_caps_the_fit_and_keeps_coverage(seed):
     assert len(y) == 100
     # coverage preserved: the subsample still reaches out to the edges of the training cloud
     assert X.min() < -3.0 and X.max() > 3.0
-
-
-def _stall_probe(errors, **overrides):
-    """Feed an error history to the stall detector round by round; return the log records."""
-    import logging
-    from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
-    settings = dict(stall_window=12, stall_significance=0.05,
-                    stall_relative_improvement=0.05, log_error_threshold=0.01)
-    settings.update(overrides)
-    cfg = HybridMCMCConfig(log_prob_fun=log_prob_gaussian, init_points=np.zeros((4, 2)),
-                           param_bounds=param_bounds, verbosity=0, **settings)
-    runner = HybridMCMCRunner(cfg)
-    records = []
-
-    class _Capture(logging.Handler):
-        def emit(self, record):
-            records.append((record.levelname, record.getMessage()))
-
-    handler = _Capture()
-    logger = logging.getLogger()
-    logger.addHandler(handler)
-    previous_level = logger.level
-    logger.setLevel(logging.INFO)
-    try:
-        for k in range(1, len(errors) + 1):
-            runner._warn_if_stalled(list(errors[:k]), converged=False)
-    finally:
-        logger.removeHandler(handler)
-        logger.setLevel(previous_level)
-    return records
-
-def test_stall_detector_does_not_fire_on_the_real_runs_that_were_improving():
-    """
-    Regression test against the traces of the 5d runs in
-    examples/example_mcmc_hybrid_stages.py. Every one of these was improving (the ring
-    at 5.6% and 7.6% per round over 30 rounds, Rosenbrock to convergence); the previous
-    rule warned on 50-64% of their rounds.
-    """
-    traces = {
-        'ring 5d, quadratic mean': [0.590, 0.5319, 0.4994, 0.4389, 0.3905, 0.4808, 0.2402,
-                                    0.4227, 0.2664, 0.2947, 0.1874, 0.1363, 0.1351, 0.1877,
-                                    0.2013, 0.2159, 0.1200, 0.1313, 0.1819, 0.1993, 0.1238,
-                                    0.1546, 0.2845, 0.1081, 0.1321, 0.1547, 0.0695, 0.0865,
-                                    0.1203, 0.1122],
-        'rosenbrock 5d, no mean': [0.1326, 0.0996, 0.0546, 0.0324, 0.0331, 0.0198, 0.0177,
-                                   0.0146, 0.0155, 0.0121, 0.0113, 0.0067],
-    }
-    for name, trace in traces.items():
-        warnings = [m for level, m in _stall_probe(trace) if level == 'WARNING']
-        assert not warnings, f'{name} was reported as stalled while it was improving'
-
-
-def test_stall_detector_catches_a_run_that_improves_then_plateaus():
-    rng = np.random.default_rng(3)
-    rounds = np.arange(40)
-    mean = -0.15 * np.minimum(rounds, 10)  # fast for ten rounds, then nothing
-    trace = 0.5 * np.exp(mean) * np.exp(rng.normal(0, 0.35, len(rounds)))
-    warnings = [m for level, m in _stall_probe(trace) if level == 'WARNING']
-    assert warnings, 'a run that plateaued after a fast start was not reported'
-    assert 'not improving fast enough' in warnings[-1]
-
-
-def test_stall_detector_needs_a_full_window():
-    assert _stall_probe([0.1] * 11) == []
-
-
-def test_error_trend_recovers_a_known_rate():
-    from slurmcmc.hybrid import HybridMCMCRunner
-    rng = np.random.default_rng(2)
-    rounds = np.arange(40)
-    errors = 0.5 * np.exp(-0.1 * rounds) * np.exp(rng.normal(0, 0.2, len(rounds)))
-    trend = HybridMCMCRunner._error_trend(list(errors))
-    assert trend['rate'] == pytest.approx(-0.1, abs=0.02)
-    assert trend['improvement_per_round'] == pytest.approx(0.095, abs=0.02)
-    assert trend['stderr'] < 0.01
 
 
 def _restart_settings(work_dir, **overrides):
@@ -454,9 +379,9 @@ def test_surrogates_are_saved_per_round_and_are_usable(work_dir):
                                                    save_surrogate='all'))
     directory = os.path.join(work_dir, 'surrogates')
     saved = sorted(f for f in os.listdir(directory) if f.endswith('.pkl'))
-    assert saved == ['round1.pkl', 'round2.pkl']
+    assert saved == ['surrogate_round1.pkl', 'surrogate_round2.pkl']
 
-    with open(os.path.join(directory, 'round1.pkl'), 'rb') as f:
+    with open(os.path.join(directory, 'surrogate_round1.pkl'), 'rb') as f:
         payload = pickle.load(f)
     assert payload['ind_round'] == 1
     assert payload['num_train_points'] == result['num_train_points_per_round'][0]
@@ -482,7 +407,7 @@ def test_resumed_round_reuses_its_saved_fit_instead_of_repeating_it(work_dir):
     """
     from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
 
-    cfg = HybridMCMCConfig(log_prob_fun=log_prob_gaussian, init_points=np.zeros((4, 2)),
+    cfg = HybridMCMCConfig(log_prob_fun=log_prob_gaussian, init_points=np.zeros((4, 2)), num_expensive_iters=5,
                            param_bounds=param_bounds, work_dir=work_dir,
                            save_surrogate='all', verbosity=0)
     runner = HybridMCMCRunner(cfg)
@@ -502,14 +427,14 @@ def test_resumed_round_reuses_its_saved_fit_instead_of_repeating_it(work_dir):
     # and the log says so, rather than claiming a second fit
     log = open(os.path.join(work_dir, 'surrogates', 'surrogate_log.txt')).read().splitlines()
     assert len([line for line in log if line.strip().startswith('3 ')]) == 2
-    assert log[-1].split()[6:8] == ['-', 'round3.pkl'] and 'reused' in log[-1]
+    assert log[-1].split()[6:8] == ['-', 'surrogate_round3.pkl'] and 'reused' in log[-1]
 
 
 def test_saved_fit_is_rejected_when_the_training_set_has_moved_on(work_dir):
     """The fingerprint must catch a stale fit rather than silently reusing the wrong model."""
     from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
 
-    cfg = HybridMCMCConfig(log_prob_fun=log_prob_gaussian, init_points=np.zeros((4, 2)),
+    cfg = HybridMCMCConfig(log_prob_fun=log_prob_gaussian, init_points=np.zeros((4, 2)), num_expensive_iters=5,
                            param_bounds=param_bounds, work_dir=work_dir,
                            save_surrogate='all', verbosity=0)
     runner = HybridMCMCRunner(cfg)
@@ -538,7 +463,7 @@ def test_latest_mode_keeps_one_rolling_file(work_dir):
     # unable to tell which round a recovered surrogate belongs to
     directory = os.path.join(work_dir, 'surrogates')
     saved = sorted(f for f in os.listdir(directory) if f.endswith('.pkl'))
-    assert saved == [f'round{result["num_rounds"]}.pkl']
+    assert saved == [f'surrogate_round{result["num_rounds"]}.pkl']
     with open(os.path.join(directory, saved[0]), 'rb') as f:
         payload = pickle.load(f)
     assert payload['ind_round'] == result['num_rounds']          # the last round, not the first
@@ -606,7 +531,7 @@ def test_saved_surrogate_is_not_reused_across_a_family_change(work_dir):
     train_X = list(rng.uniform(-3, 3, (60, 2)))
     train_y = [log_prob_ring(x) for x in train_X]
 
-    dense_cfg = HybridMCMCConfig(log_prob_fun=log_prob_ring, init_points=np.zeros((4, 2)),
+    dense_cfg = HybridMCMCConfig(log_prob_fun=log_prob_ring, init_points=np.zeros((4, 2)), num_expensive_iters=5,
                                  param_bounds=param_bounds, work_dir=work_dir,
                                  surrogate=GaussianProcessSurrogate(n_restarts_optimizer=0),
                                  save_surrogate='latest', verbosity=0)
@@ -615,7 +540,7 @@ def test_saved_surrogate_is_not_reused_across_a_family_change(work_dir):
     runner._fit_surrogate(ind_round=2)
 
     ensemble_cfg = HybridMCMCConfig(log_prob_fun=log_prob_ring,
-                                    init_points=np.zeros((4, 2)),
+                                    init_points=np.zeros((4, 2)), num_expensive_iters=5,
                                     param_bounds=param_bounds, work_dir=work_dir,
                                     surrogate=DistributedGPSurrogate(num_experts=2,
                                                                      n_restarts_optimizer=0),
@@ -743,7 +668,7 @@ def _fitted_unbounded_runner():
     np.random.seed(1)
     X = np.random.normal(size=(120, 2))
     runner = HybridMCMCRunner(HybridMCMCConfig(
-        log_prob_fun=log_prob_gaussian, init_points=np.zeros((4, 2)), param_bounds=None,
+        log_prob_fun=log_prob_gaussian, init_points=np.zeros((4, 2)), num_expensive_iters=5, param_bounds=None,
         surrogate_uncertainty_penalty=0.0, cluster='local-map', verbosity=0))
     runner.train_X = [x for x in X]
     runner.train_y = [log_prob_gaussian(x) for x in X]
@@ -801,7 +726,7 @@ def test_confinement_penalty_is_inactive_inside_the_data_hull():
 def test_bounded_mode_is_unchanged_by_the_confinement_machinery():
     """A run that supplies param_bounds must behave exactly as before: box, no envelope."""
     runner = HybridMCMCRunner(HybridMCMCConfig(
-        log_prob_fun=log_prob_gaussian, init_points=np.zeros((4, 2)),
+        log_prob_fun=log_prob_gaussian, init_points=np.zeros((4, 2)), num_expensive_iters=5,
         param_bounds=param_bounds, cluster='local-map', verbosity=0))
     assert runner._unbounded is False
     np.random.seed(2)
@@ -820,7 +745,7 @@ def test_surrogate_walkers_are_independent_of_the_expensive_stage():
     L_c/tau, so it defaults to the fewest emcee will accept.
     """
     from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
-    cfg = HybridMCMCConfig(log_prob_fun=log_prob_gaussian, init_points=np.zeros((40, 2)),
+    cfg = HybridMCMCConfig(log_prob_fun=log_prob_gaussian, init_points=np.zeros((40, 2)), num_expensive_iters=5,
                            param_bounds=param_bounds, cluster='local-map', verbosity=0)
     runner = HybridMCMCRunner(cfg)
     assert runner._num_surrogate_walkers() == 2 * 2 + 2   # not the 40 of the expensive stage
@@ -844,7 +769,7 @@ def test_surrogate_chain_is_rebuilt_each_round_and_burnt_in(verbosity, seed, ini
                                surrogate_burnin_fraction=burnin_fraction,
                                refine_surrogate_ess=0,          # no extension, so the length is known
                                num_validation_points=20, num_rounds_max=2,
-                               cluster='local-map', verbosity=verbosity)
+                               cluster='local-map', posterior_shift_tolerance=0.1, verbosity=verbosity)
 
     assert result['num_rounds'] == 2
     num_iters = result['surrogate_iters_per_round'][-1]
@@ -861,12 +786,12 @@ def test_surrogate_chain_is_rebuilt_each_round_and_burnt_in(verbosity, seed, ini
 def test_ess_floors_scale_with_dimension():
     """None means mcmc.md's advised band: 10*num_params while refining, 100*num_params to report."""
     from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
-    cfg = HybridMCMCConfig(log_prob_fun=log_prob_gaussian, init_points=np.zeros((8, 2)),
+    cfg = HybridMCMCConfig(log_prob_fun=log_prob_gaussian, init_points=np.zeros((8, 2)), num_expensive_iters=5,
                            cluster='local-map', verbosity=0)
     runner = HybridMCMCRunner(cfg)
     assert runner._ess_floor() == 20.0
     assert runner._ess_floor(final=True) == 200.0
-    cfg.refine_surrogate_ess, cfg.final_surrogate_ess = 123.0, 456.0
+    cfg.refine_surrogate_ess, cfg.verify_surrogate_ess = 123.0, 456.0
     assert (runner._ess_floor(), runner._ess_floor(final=True)) == (123.0, 456.0)
 
 
@@ -907,7 +832,7 @@ def test_verification_can_be_switched_off(verbosity, seed, init_points):
 def test_every_config_field_is_reachable_through_the_wrapper():
     """
     Adding a config field and forgetting the wrapper is silent until someone passes it and gets
-    a TypeError at runtime. Only the warning/stall tuning knobs are deliberately config-only.
+    a TypeError at runtime. Only the warning tuning knobs are deliberately config-only.
     """
     import dataclasses
     import inspect
@@ -915,8 +840,7 @@ def test_every_config_field_is_reachable_through_the_wrapper():
 
     fields = {f.name for f in dataclasses.fields(HybridMCMCConfig)}
     params = set(inspect.signature(slurm_mcmc_hybrid).parameters)
-    config_only = {'bounds_warning_fraction', 'bounds_warning_tolerance',
-                   'stall_relative_improvement', 'stall_significance', 'stall_window'}
+    config_only = {'bounds_warning_fraction', 'bounds_warning_tolerance'}
     assert fields - params == config_only, 'a new config field is not reachable from the wrapper'
     assert params - fields == set(), 'the wrapper takes an argument the config does not have'
 
@@ -992,12 +916,12 @@ def test_posterior_stability_is_judged_in_posterior_widths():
     rng = np.random.default_rng(0)
     old = rng.normal(0.0, 1.0, (50000, 3))
     runner = HybridMCMCRunner(HybridMCMCConfig(log_prob_fun=log_prob_gaussian,
-                                               init_points=np.zeros((8, 2)),
-                                               cluster='local-map', verbosity=0))
+                                               init_points=np.zeros((8, 2)), num_expensive_iters=5,
+                                               cluster='local-map', posterior_shift_tolerance=0.1, verbosity=0))
     assert runner._posterior_displacement(old + 0.02, old) == pytest.approx(0.02, abs=0.005)
     assert runner._posterior_displacement(old, None) == float('inf')
 
-    passing = {'weighted_log_error': 0.0, 'ess_weights': 1e3,
+    passing = {'weighted_log_error': 0.0, 'weight_efficiency': 1.0,
                'posterior_displacement': 0.02, 'posterior_noise_floor': 0.01}
     assert runner._is_converged(passing)
     assert 'posterior-stability' not in runner._blocking_criteria(passing)
@@ -1027,7 +951,7 @@ def test_existing_evaluations_can_replace_round_zero(seed, caplog):
         initial_train_points=points, initial_train_values=values,
         num_expensive_iters=999, num_regularization_points=999,   # must never be used
         num_surrogate_iters=300, num_validation_points=20, num_rounds_max=1,
-        cluster='local-map', verbosity=0))
+        cluster='local-map', posterior_shift_tolerance=0.1, verbosity=0))
     with caplog.at_level('WARNING'):
         result = runner.run()
 
@@ -1218,7 +1142,7 @@ def test_surrogate_log_records_every_fit_with_its_settings(work_dir):
         assert all(field.replace('.', '').isdigit() for field in line.split()[2:7])
     assert 'num_experts=2' in rows[-1] and 'default settings' in rows[0]
     # save_surrogate='latest' left one pickle, but the log kept every round
-    assert sorted(os.listdir(os.path.join(work_dir, 'surrogates'))) == ['round3.pkl', 'surrogate_log.txt']
+    assert sorted(os.listdir(os.path.join(work_dir, 'surrogates'))) == ['surrogate_log.txt', 'surrogate_round3.pkl']
 
 
 def test_diagnostics_header_has_no_training_set_block(verbosity, seed, init_points):
@@ -1231,3 +1155,305 @@ def test_diagnostics_header_has_no_training_set_block(verbosity, seed, init_poin
     text = open(os.path.join('mcmc_hybrid', 'hybrid_diagnostics.txt')).read()
     assert 'training set at the latest surrogate fit' not in text
     assert 'expensive evaluations' in text and 'n_expensive' in text
+
+
+def test_diagnostics_header_prints_the_bounds_themselves():
+    """A bounded run lists each parameter's [lo, hi], so the box can be checked; unbounded says so."""
+    from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
+
+    def header(**kwargs):
+        return HybridMCMCRunner(HybridMCMCConfig(log_prob_fun=log_prob_gaussian,
+                                                 init_points=np.zeros((6, 2)), num_expensive_iters=5,
+                                                 verbosity=0, **kwargs))._diagnostics_header()
+
+    bounded = header(param_bounds=[[-3.0, 2.5], [0.001, 1e4]])
+    assert re.search(r'param_bounds\[0\]\s+\[-3, 2\.5\]', bounded)
+    assert re.search(r'param_bounds\[1\]\s+\[0\.001, 10000\]', bounded)
+    assert 'none (unbounded' in header(param_bounds=None)
+
+
+def test_num_expensive_iters_is_required_without_initial_training_data():
+    """The round-0 budget is the user's to choose; with existing evaluations it is not needed."""
+    from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
+    with pytest.raises(ValueError, match='num_expensive_iters is required'):
+        HybridMCMCRunner(HybridMCMCConfig(log_prob_fun=log_prob_gaussian,
+                                          init_points=np.zeros((8, 2))))
+    points = np.random.default_rng(0).normal(size=(30, 2))
+    HybridMCMCRunner(HybridMCMCConfig(log_prob_fun=log_prob_gaussian, initial_train_points=points,
+                                      initial_train_values=np.zeros(30)))
+
+
+def test_auto_settings_resolve_from_the_number_of_parameters():
+    """'auto' is a rule in d; None switches an ESS floor off and makes the trim unconditional."""
+    from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
+
+    def runner(num_params, **kwargs):
+        return HybridMCMCRunner(HybridMCMCConfig(log_prob_fun=log_prob_gaussian,
+                                                 init_points=np.zeros((2 * num_params + 2, num_params)),
+                                                 num_expensive_iters=5, verbosity=0, **kwargs))
+
+    assert runner(2)._num_validation_points() == 200
+    assert runner(25)._num_validation_points() == 250
+    assert runner(25, num_validation_points=40)._num_validation_points() == 40
+    assert runner(3)._ess_floor() == 30 and runner(3)._ess_floor(final=True) == 300
+    assert runner(3, refine_surrogate_ess=None)._ess_floor() == 0.0
+    assert runner(3)._min_train_points_after_trim() == 30
+    assert runner(3, min_train_points_after_trim=None)._min_train_points_after_trim() == 0
+    # a quadratic (the default) in 4 parameters has C(6, 2) = 15 coefficients, fewer than 10 d = 40
+    assert runner(4, surrogate='polynomial')._min_train_points_after_trim() == 40
+    # a quartic in 6 parameters has C(10, 4) = 210 coefficients, more than 10 d = 60
+    assert runner(6, surrogate='polynomial', polynomial_degree=4)._min_train_points_after_trim() == 210
+    assert runner(3, num_surrogate_walkers='auto')._num_surrogate_walkers() == 8
+    with pytest.raises(ValueError, match="use 'auto' or a number"):
+        runner(2, num_validation_points='automatic')
+
+
+def test_weight_efficiency_gate_catches_surrogate_mass_where_the_target_has_none():
+    """
+    Half the surrogate posterior in a lobe where the target is e^-10 lower: the weighted error
+    cannot see it and passes, but the weight efficiency is ~0.5 and blocks convergence.
+    """
+    from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
+    rng = np.random.default_rng(0)
+    d = np.concatenate([rng.normal(scale=0.02, size=50), np.full(50, -10.0)])
+    metrics = HybridMCMCRunner._accuracy_metrics(d, np.zeros(100))
+    assert metrics['weighted_log_error'] < 0.1
+    assert metrics['weight_efficiency'] == pytest.approx(0.5, abs=0.01)
+    metrics.update(posterior_displacement=0.0, posterior_noise_floor=0.0)
+
+    runner = HybridMCMCRunner(HybridMCMCConfig(log_prob_fun=log_prob_gaussian,
+                                               init_points=np.zeros((8, 2)), num_expensive_iters=5,
+                                               verbosity=0))
+    assert not runner._is_converged(metrics)
+    assert runner._blocking_criteria(metrics) == ['weight-efficiency']
+    with pytest.raises(ValueError, match='min_weight_efficiency'):
+        HybridMCMCRunner(HybridMCMCConfig(log_prob_fun=log_prob_gaussian,
+                                          init_points=np.zeros((8, 2)), num_expensive_iters=5,
+                                          min_weight_efficiency=10.0))
+
+
+def test_weight_efficiency_is_reported_per_round_and_in_the_diagnostics(work_dir):
+    from slurmcmc.hybrid import slurm_mcmc_hybrid
+    np.random.seed(0)
+    result = slurm_mcmc_hybrid(**_restart_settings(work_dir, num_rounds_max=2,
+                                                   save_posterior_samples=50))
+    efficiencies = result['weight_efficiency_per_round']
+    assert len(efficiencies) == 2 and all(0.0 < e <= 1.0 for e in efficiencies)
+    text = open(os.path.join(work_dir, 'hybrid_diagnostics.txt')).read()
+    assert 'w_eff' in text and 'min_weight_efficiency' in text
+    assert 'num_validation_points                  20' in text
+    assert sorted(os.listdir(os.path.join(work_dir, 'posteriors'))) == \
+           ['posterior_round1.npy', 'posterior_round2.npy']
+
+
+def test_a_surrogate_saved_under_the_old_file_name_is_still_reused(work_dir):
+    """Runs saved before the rename wrote surrogates/round{k}.pkl; a resume must still find it."""
+    from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
+    cfg = HybridMCMCConfig(log_prob_fun=log_prob_gaussian, init_points=np.zeros((4, 2)),
+                           num_expensive_iters=5, param_bounds=param_bounds, work_dir=work_dir,
+                           save_surrogate='all', verbosity=0)
+    runner = HybridMCMCRunner(cfg)
+    rng = np.random.default_rng(0)
+    runner.train_X = list(rng.uniform(-3, 3, (60, 2)))
+    runner.train_y = [log_prob_gaussian(x) for x in runner.train_X]
+    runner._fit_surrogate(ind_round=3)
+    directory = os.path.join(work_dir, 'surrogates')
+    os.rename(os.path.join(directory, 'surrogate_round3.pkl'), os.path.join(directory, 'round3.pkl'))
+
+    resumed = HybridMCMCRunner(cfg)
+    resumed.train_X, resumed.train_y = list(runner.train_X), list(runner.train_y)
+    resumed._resumed = True
+    assert resumed._fit_surrogate(ind_round=3) == 0.0
+
+
+def test_a_run_stopped_inside_verification_keeps_its_round_and_resumes(work_dir, monkeypatch):
+    """
+    Verification is the longest stretch of a round, so the diagnostics and the restart are
+    written before it starts: a run stopped inside it shows the round as verifying, keeps the
+    refinement batch's expensive evaluations, and on resume redoes the round without recording
+    it twice.
+    """
+    from slurmcmc.general_utils import load_restart_file
+    from slurmcmc.hybrid import HybridMCMCRunner, slurm_mcmc_hybrid
+
+    validate = HybridMCMCRunner._validate_posterior
+
+    def stop_at_verification(self, *args, **kwargs):
+        if args[-1].endswith('_verification'):   # the stage name
+            raise KeyboardInterrupt('stopped inside the verification')
+        return validate(self, *args, **kwargs)
+
+    settings = _restart_settings(work_dir, log_error_threshold=1e3, posterior_shift_tolerance=None,
+                                 save_restart=True, num_rounds_max=3)
+    np.random.seed(0)
+    monkeypatch.setattr(HybridMCMCRunner, '_validate_posterior', stop_at_verification)
+    with pytest.raises(KeyboardInterrupt):
+        slurm_mcmc_hybrid(**settings)
+
+    lines = open(os.path.join(work_dir, 'hybrid_diagnostics.txt')).read().splitlines()
+    assert re.match(r'\s*1\s+\d+', lines[-2])            # the refinement row, with its sizes
+    assert re.match(r'\s*1v\s+verifying', lines[-1])     # and the verification it was in
+    status = load_restart_file(work_dir, 'hybrid_restart.pkl')
+    assert status['ini_round'] == 1                       # the round is redone on resume
+    assert status['weighted_log_error_per_round'] == [] and status['round_records'] == []
+    assert status['num_fit_points_per_round'] == []
+    # the refinement batch is already in the training set: 6 * 8 round-0 points, 30
+    # regularization points, then the 20-point batch (fewer only if a point repeated)
+    assert len(status['train_y']) > 6 * 8 + 30
+    evals_before_resume = status['num_expensive_evals']
+
+    monkeypatch.setattr(HybridMCMCRunner, '_validate_posterior', validate)
+    np.random.seed(0)
+    resumed = slurm_mcmc_hybrid(**dict(settings, load_restart=True))
+    assert resumed['converged']
+    assert resumed['num_rounds'] == 1 and resumed['verified_per_round'] == [True]
+    assert [rec['verified'] for rec in resumed['round_records']] == [False, True]
+    assert resumed['num_expensive_evals'] > evals_before_resume
+    lines = open(os.path.join(work_dir, 'hybrid_diagnostics.txt')).read().splitlines()
+    assert not any('verifying' in line for line in lines)
+
+
+def test_a_hybrid_run_logs_no_emcee_autocorrelation_warnings(work_dir, caplog):
+    """
+    Refinement chains are short of 50 tau by design, and the pipeline checks L_c/tau itself, so
+    emcee's own 'chain is shorter than 50 times...' warning would only clutter the log.
+    """
+    import logging
+    from slurmcmc.hybrid import slurm_mcmc_hybrid
+    np.random.seed(0)
+    with caplog.at_level(logging.WARNING, logger='emcee'):
+        slurm_mcmc_hybrid(**_restart_settings(work_dir, num_rounds_max=2))
+    assert not [r for r in caplog.records if r.name.startswith('emcee')]
+
+
+# ---------------------------------------------------------------------------
+# Sizing the cheap chain from its autocorrelation time
+# ---------------------------------------------------------------------------
+
+def test_the_chain_length_a_depth_needs_follows_from_its_floors():
+    """ESS = nwalkers (1 - burn-in) L / tau sets one floor and L_c >= k tau the other."""
+    from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
+
+    def runner(**kwargs):
+        return HybridMCMCRunner(HybridMCMCConfig(
+            log_prob_fun=log_prob_gaussian, init_points=np.zeros((8, 2)), num_expensive_iters=5,
+            surrogate_burnin_fraction=0.2, verbosity=0, **kwargs))
+
+    default = runner()
+    assert default._iters_per_tau_floor(final=False) == 10.0   # 'auto' while refining
+    assert default._iters_per_tau_floor(final=True) == 50.0    # 'auto' while verifying
+    # refining: 10 d = 20 effective samples from 6 walkers keeping 80% is 125 iterations at
+    # tau = 30, against L_c >= 10 tau = 300
+    assert default._iters_needed(30.0, 6, final=False) == pytest.approx(10 * 30.0)
+    # with the L_c/tau floor off, the ESS floor alone
+    assert runner(refine_iters_per_tau=None)._iters_needed(30.0, 6, final=False) == \
+        pytest.approx(20 * 30.0 / (6 * 0.8))
+    # verifying: 100 d = 200 effective samples (1250 iterations) against L_c >= 50 tau (1500)
+    assert default._iters_needed(30.0, 6, final=True) == pytest.approx(50 * 30.0)
+    runner = default
+    assert runner._tau_reference() == 10.0 * 2     # nothing measured yet: the nominal tau
+    runner._last_surrogate_tau = 57.0
+    assert runner._tau_reference() == 57.0
+
+
+def test_auto_sized_chains_reach_their_floors_without_a_length_given(work_dir):
+    """With num_surrogate_iters='auto' the verified chain meets both floors of reporting depth."""
+    from slurmcmc.hybrid import slurm_mcmc_hybrid
+    np.random.seed(0)
+    settings = _restart_settings(work_dir, log_error_threshold=1e3, posterior_shift_tolerance=None,
+                                 num_rounds_max=2)
+    settings.pop('num_surrogate_iters')
+    result = slurm_mcmc_hybrid(**settings)
+    assert result['converged'] and result['verified_per_round'][-1]
+    verified = result['round_records'][-1]
+    assert verified['surrogate_iters'] >= 50 * verified['surrogate_tau']
+    assert verified['chain_ess'] >= 100 * 2
+    text = open(os.path.join(work_dir, 'hybrid_diagnostics.txt')).read()
+    assert 'auto (= sized from tau, per chain)' in text
+
+
+def test_a_chain_stops_at_max_surrogate_iters_and_the_verification_is_not_accepted(work_dir, caplog):
+    """The absolute ceiling is respected, warned about, and a verification it cut short of its
+    floors is rejected rather than accepted on too few effective samples."""
+    import logging
+    from slurmcmc.hybrid import slurm_mcmc_hybrid
+    np.random.seed(0)
+    settings = _restart_settings(work_dir, log_error_threshold=1e3, posterior_shift_tolerance=None,
+                                 num_rounds_max=1, max_surrogate_iters=300, verbosity=1)
+    settings.pop('num_surrogate_iters')
+    with caplog.at_level(logging.WARNING):
+        result = slurm_mcmc_hybrid(**settings)
+    verified = result['round_records'][-1]
+    assert verified['verified'] and verified['surrogate_iters'] <= 300
+    assert not result['converged']
+    assert 'chain-depth' in result['blocking_criteria_per_round'][-1]
+    assert any('reached max_surrogate_iters' in r.getMessage() for r in caplog.records)
+
+
+def test_a_chain_whose_tau_grows_with_it_stops_after_stalled_extensions(work_dir, caplog,
+                                                                        monkeypatch):
+    """
+    When tau grows as fast as the chain, L_c/tau never rises and no length meets the floors: the
+    chain stops after _STALLED_EXTENSIONS extensions without progress, instead of running on.
+    """
+    import logging
+    from slurmcmc import hybrid
+    monkeypatch.setattr(hybrid.HybridMCMCRunner, '_chain_tau',
+                        lambda self, sampler, num_iters: num_iters / 20.0)   # L_c/tau stuck at 20
+    np.random.seed(0)
+    settings = _restart_settings(work_dir, log_error_threshold=1e3, posterior_shift_tolerance=None,
+                                 num_rounds_max=1, verbosity=1)
+    settings.pop('num_surrogate_iters')
+    with caplog.at_level(logging.WARNING):
+        result = hybrid.slurm_mcmc_hybrid(**settings)
+    verified = result['round_records'][-1]
+    assert verified['verified'] and not result['converged']
+    assert 'chain-depth' in result['blocking_criteria_per_round'][-1]
+    assert verified['surrogate_iters'] < 1_000_000
+    assert any('did not rise' in r.getMessage() for r in caplog.records)
+
+
+def test_a_verification_chain_is_sized_from_the_largest_tau_of_the_run():
+    """Short refinement chains under-estimate tau; a verification starts from the largest seen."""
+    from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
+    runner = HybridMCMCRunner(HybridMCMCConfig(log_prob_fun=log_prob_gaussian,
+                                               init_points=np.zeros((8, 2)), num_expensive_iters=5,
+                                               verbosity=0))
+    runner._last_surrogate_tau, runner._max_surrogate_tau = 30.0, 400.0
+    assert runner._tau_reference(final=False) == 30.0
+    assert runner._tau_reference(final=True) == 400.0
+
+
+def test_an_auto_sized_run_resumed_from_its_restart_reproduces_an_uninterrupted_one(work_dir):
+    """The restart restores the last chain's tau, which sizes the next chain."""
+    from slurmcmc.hybrid import slurm_mcmc_hybrid
+    settings = dict(log_prob_fun=log_prob_ring, param_bounds=param_bounds,
+                    init_points=np.random.default_rng(0).uniform(-2, 2, (8, 2)),
+                    num_expensive_iters=5, num_regularization_points=20,
+                    num_validation_points=20, log_error_threshold=1e-9,   # force every round to run
+                    cluster='local-map', verbosity=0, random_seed=11)
+    whole = slurm_mcmc_hybrid(num_rounds_max=2, work_dir=os.path.abspath('whole'), **settings)
+    slurm_mcmc_hybrid(num_rounds_max=1, work_dir=os.path.abspath('split'), save_restart=True,
+                      **settings)
+    resumed = slurm_mcmc_hybrid(num_rounds_max=2, work_dir=os.path.abspath('split'),
+                                load_restart=True, save_restart=True, **settings)
+    assert resumed['surrogate_iters_per_round'] == whole['surrogate_iters_per_round']
+    np.testing.assert_array_equal(resumed['samples'], whole['samples'])
+
+
+def test_the_applied_shift_tolerance_is_recorded_and_printed(work_dir):
+    """The posterior shift is held to the tolerance raised to the chains' noise floor; that applied
+    tolerance is what the records, the diagnostics and the plots must show, not the requested one."""
+    from slurmcmc.hybrid import slurm_mcmc_hybrid
+    np.random.seed(0)
+    result = slurm_mcmc_hybrid(**_restart_settings(work_dir, num_rounds_max=2,
+                                                   posterior_shift_tolerance=0.1))
+    records = result['round_records']
+    assert all(np.isfinite(r['posterior_shift_tolerance']) and r['posterior_shift_tolerance'] >= 0.1
+               for r in records)
+    # the second round compares two finite chains, so its noise floor is computable from them
+    second = records[-1]
+    noise = 3.0 * np.sqrt(1.0 / second['chain_ess'] + 1.0 / records[0]['chain_ess'])
+    assert second['posterior_shift_tolerance'] == pytest.approx(max(0.1, noise), rel=1e-6)
+    text = open(os.path.join(work_dir, 'hybrid_diagnostics.txt')).read()
+    assert 'shift_tol' in text

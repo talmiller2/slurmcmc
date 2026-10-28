@@ -55,11 +55,12 @@ minima = np.ones(num_params)  # the Rosenbrock maximum of -rosen, for reference 
 param_labels = [f'$x_{i}$' for i in range(num_params)]
 
 # named because the plots draw them too, so they cannot drift out of sync with the run
-log_error_threshold = 0.01          # tighter than the 0.1 default, so the loop refines a few rounds
-posterior_shift_tolerance = None  # stability check disabled; None = do not test it at all
+log_error_threshold = 0.1 # default
+posterior_shift_tolerance = None # default None = do not test it at all
+min_weight_efficiency = 0.9 # default
 train_log_prob_trim_range = 100.0
-surrogate_burnin_fraction = 0.2
-final_iters_per_tau = 50.0
+surrogate_burnin_fraction = 0.2  # default
+refine_iters_per_tau_floor, verify_iters_per_tau_floor = 10.0, 50.0 # defaults
 num_posterior_points_shown = 200     # posterior draws scattered over the log-prob maps
 
 
@@ -86,28 +87,27 @@ def run_hybrid():
         num_regularization_points=50,
         num_expensive_iters_per_round=0,        # > 0 re-runs a short expensive chain each round
         # --- surrogate ---
-        surrogate='gp',                         # 'gp' | 'polynomial' | DistributedGPSurrogate | your own fit/predict object
-        # surrogate=DistributedGPSurrogate(parallel='joblib', max_points_per_expert=500),
-        polynomial_degree=3,
-        num_surrogate_iters=5000,
+        # 'gp' | 'polynomial' | DistributedGPSurrogate | your own fit/predict object
+        surrogate=DistributedGPSurrogate(parallel='joblib', max_points_per_expert=500),
+        polynomial_degree=2,
+        num_surrogate_iters='auto',             # sized from tau, chain by chain
         num_surrogate_walkers=num_surrogate_walkers,
         surrogate_burnin_fraction=surrogate_burnin_fraction,
         surrogate_uncertainty_penalty=1.0,      # sample mean - kappa*std, to avoid extrapolation
         # --- validation and convergence ---
-        num_validation_points=100,
+        num_validation_points='auto',           # max(200, 10 * num_params)
         log_error_threshold=log_error_threshold,
-        min_ess_weights=10.0,
+        min_weight_efficiency=min_weight_efficiency,
         posterior_shift_tolerance=posterior_shift_tolerance,
-        refine_surrogate_ess=None,              # refining: ESS floor, None = 10 * num_params
-        refine_iters_per_tau=None,              # refining: L_c/tau not demanded (None = off)
-        final_surrogate_ess=None,               # verifying: ESS floor, None = 100 * num_params
-        final_iters_per_tau=final_iters_per_tau,  # verifying: L_c >= 50 tau
+        refine_surrogate_ess='auto',            # refining: ESS floor, 'auto' = 10 * num_params
+        refine_iters_per_tau='auto',            # refining: L_c/tau floor, 'auto' = 10
+        verify_surrogate_ess='auto',            # verifying: ESS floor, 'auto' = 100 * num_params
+        verify_iters_per_tau='auto',            # verifying: L_c/tau floor, 'auto' = 50
         max_verification_attempts=None,   # None = as many as the target needs; num_rounds_max bounds it
-        max_surrogate_iters_multiplier=30,
         num_rounds_max=30,
         # --- training data handling ---
         train_log_prob_trim_range=train_log_prob_trim_range,
-        min_train_points_after_trim=50,
+        min_train_points_after_trim='auto',     # 10 * num_params
         max_train_points=None,
         train_log_prob_floor=None,
         # --- saving and restart ---
@@ -120,7 +120,7 @@ def run_hybrid():
         # --- execution ---
         verbosity=1,
         slurm_verbosity=0,
-        log_file=None,
+        log_file='hybrid.log',
         extra_arg=None,
         work_dir=work_dir,
         job_name=work_dir,
@@ -144,7 +144,7 @@ def run_hybrid():
     # sampler holds a reference to the whole runner, so neither is cached
     cached = {'result': {key: result[key] for key in
                          ('converged', 'num_rounds', 'samples', 'num_expensive_evals', 'total_time',
-                          'weighted_log_error_per_round',
+                          'weighted_log_error_per_round', 'weight_efficiency_per_round',
                           'posterior_displacement_per_round', 'num_train_points_per_round',
                           'num_fit_points_per_round', 'round_records', 'surrogate_iters_per_round',
                           'surrogate_ess_per_round', 'surrogate_tau_per_round',
@@ -249,6 +249,28 @@ def save(fig, name):
         fig.savefig(os.path.join(figs_dir, 'example_mcmc_hybrid_' + name + '.png'), dpi=150, bbox_inches='tight')
 
 
+def applied_shift_tolerances(records, requested):
+    """
+    The tolerance each measurement's posterior shift was held to: recorded since it was kept,
+    and otherwise rebuilt as the pipeline computes it -- the requested tolerance raised to the
+    noise floor 3 sqrt(1/ESS + 1/ESS_previous), where ESS_previous is the previous round's
+    reported chain (its last record).
+    """
+    applied, previous_ess, last_ess_by_round = [], None, {}
+    for rec in records:
+        if rec['round'] not in last_ess_by_round and last_ess_by_round:
+            previous_ess = list(last_ess_by_round.values())[-1]
+        if 'posterior_shift_tolerance' in rec:
+            applied.append(rec['posterior_shift_tolerance'])
+        elif previous_ess is None:
+            applied.append(np.nan)    # nothing to compare the first round with
+        else:
+            noise = 3.0 * np.sqrt(1.0 / max(rec['chain_ess'], 1.0) + 1.0 / max(previous_ess, 1.0))
+            applied.append(max(requested, noise))
+        last_ess_by_round[rec['round']] = rec['chain_ess']
+    return np.array(applied, dtype=float)
+
+
 # --- convergence, round by round ---
 # Top: the criteria, with the region a converged run must stay out of shaded. Bottom: the depth of
 # the surrogate chain against its floors. A verified round has two points, its refinement and its
@@ -259,21 +281,32 @@ verified = np.array([rec['verified'] for rec in records], dtype=bool)
 x_round = rounds + np.where(verified, 0.18, 0.0)
 round_ticks = np.unique(rounds).astype(int)
 round_ticks = round_ticks[::max(1, len(round_ticks) // 10)]   # a tick per round is unreadable by 30
-# (values, y label, y scale, [(level, legend label, colour)], shade above the first level)
+# (values, y label, y scale, [(level, legend label, colour)], shade the failing side of the first
+# level: 'above', 'below' or None)
 panels = [
     ([rec['weighted_log_error'] for rec in records], '$\\epsilon$ [nats]', 'log',
-     [(log_error_threshold, 'threshold', 'red')], True),
-    ([rec['posterior_displacement'] for rec in records], 'posterior shift [sd]', 'log',
-     [] if posterior_shift_tolerance is None else [(posterior_shift_tolerance, 'threshold', 'red')],
-     True),
+     [(log_error_threshold, 'threshold', 'red')], 'above'),
+    ([rec['weight_efficiency'] for rec in records], 'weight efficiency $\\eta_w$', 'linear',
+     [(min_weight_efficiency, 'threshold', 'red')], 'below'),
+    # its threshold differs per round (see below), so it is drawn after the loop
+    ([rec['posterior_displacement'] for rec in records], 'posterior shift [sd]', 'log', [], None),
     ([rec['surrogate_iters'] / rec['surrogate_tau'] for rec in records], '$L_c/\\tau$', 'linear',
-     [(final_iters_per_tau, f'verification floor, $L_c/\\tau \\geq {final_iters_per_tau:.0f}$', 'red')],
-     False),
+     [(refine_iters_per_tau_floor, f'refinement floor, $L_c/\\tau \\geq {refine_iters_per_tau_floor:.0f}$',
+       'orange'),
+      (verify_iters_per_tau_floor, f'verification floor, $L_c/\\tau \\geq {verify_iters_per_tau_floor:.0f}$',
+       'red')],
+     None),
     ([rec['chain_ess'] for rec in records], 'ESS/$\\tau$', 'linear',
      [(10 * num_params, 'refinement floor, ESS/$\\tau \\geq 10\\,d$', 'orange'),
-      (100 * num_params, 'verification floor, ESS/$\\tau \\geq 100\\,d$', 'red')], False)]
-fig, axes = plt.subplots(2, 2, figsize=(12, 9))
-for ax, (values, ylabel, yscale, levels, shade_above) in zip(axes.ravel(), panels):
+      (100 * num_params, 'verification floor, ESS/$\\tau \\geq 100\\,d$', 'red')], None)]
+if posterior_shift_tolerance is None:
+    # stability is not a criterion of this run, so its panel would only invite misreading
+    panels = [panel for panel in panels if panel[1] != 'posterior shift [sd]']
+num_cols = int(np.ceil(len(panels) / 2))
+fig, axes = plt.subplots(2, num_cols, figsize=(5.7 * num_cols, 9))
+for ax in axes.ravel()[len(panels):]:
+    ax.axis('off')
+for ax, (values, ylabel, yscale, levels, shade) in zip(axes.ravel(), panels):
     values = np.array(values, dtype=float)
     shown = np.isfinite(values) & ((values > 0) if yscale == 'log' else True)
     ax.plot(x_round[shown], values[shown], '-', color='b', alpha=0.4)
@@ -284,10 +317,25 @@ for ax, (values, ylabel, yscale, levels, shade_above) in zip(axes.ravel(), panel
     ax.set_yscale(yscale)
     for level, label, color in levels:  # a criterion can be switched off, and then has no line
         ax.axhline(level, color=color, ls='--', label=label)
-    if shade_above and levels:
+    if shade and levels:
         low, high = ax.get_ylim()  # captured before the span, which would otherwise widen them
-        ax.axhspan(levels[0][0], high, color='r', alpha=0.08)
+        if shade == 'above':
+            ax.axhspan(levels[0][0], high, color='r', alpha=0.08)
+        else:
+            low = min(low, levels[0][0] - 0.02)
+            ax.axhspan(low, levels[0][0], color='r', alpha=0.08)
         ax.set_ylim(low, high)
+    if ylabel == 'posterior shift [sd]' and posterior_shift_tolerance is not None:
+        # the tolerance applied is posterior_shift_tolerance raised to the noise floor of the two
+        # chains compared, so it is a threshold per round, not one line
+        applied = applied_shift_tolerances(records, posterior_shift_tolerance)
+        low, high = ax.get_ylim()
+        high = max(high, 1.5 * np.nanmax(applied))
+        ax.plot(x_round, applied, '--', color='red', marker='_', markersize=12,
+                label='tolerance applied: requested, raised to the noise floor')
+        ax.fill_between(x_round, applied, high, color='r', alpha=0.08)
+        ax.axhline(posterior_shift_tolerance, color='0.4', ls=':', label='tolerance requested')
+        ax.set_ylim(min(low, 0.8 * np.nanmin(applied), 0.8 * posterior_shift_tolerance), high)
     ax.legend(fontsize=8, framealpha=0.85)
     ax.set_xticks(round_ticks)
     ax.set_xlabel('round')
@@ -380,10 +428,11 @@ save(fig, 'posterior')
 # --- the hybrid posterior, round by round (for a verified round, its verification chain's) ---
 # Each round saved the same number of draws, far fewer than the reference, hence coarser bins.
 posterior_dir = os.path.join(work_dir, 'posteriors')
-saved_rounds = (sorted(int(f[5:-4]) for f in os.listdir(posterior_dir))
+saved_rounds = (sorted(int(f[len('posterior_round'):-4]) for f in os.listdir(posterior_dir)
+                       if f.startswith('posterior_round'))
                 if os.path.isdir(posterior_dir) else [])
 if saved_rounds:
-    per_round = [np.load(os.path.join(posterior_dir, f'round{r}.npy')) for r in saved_rounds]
+    per_round = [np.load(os.path.join(posterior_dir, f'posterior_round{r}.npy')) for r in saved_rounds]
     fig = plt.figure(figsize=(7, 7))
     colors = plt.cm.rainbow(np.linspace(0, 1, len(saved_rounds)))
     for color, round_samples in zip(colors, per_round):

@@ -458,7 +458,7 @@ class PolynomialSurrogate:
     envelope limits the walkers.
     """
 
-    def __init__(self, degree: int = 3, ridge_alpha: float = 1e-6):
+    def __init__(self, degree: int = 2, ridge_alpha: float = 1e-6):
         from sklearn.linear_model import Ridge
         from sklearn.pipeline import make_pipeline
         from sklearn.preprocessing import PolynomialFeatures

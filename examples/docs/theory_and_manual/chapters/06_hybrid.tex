@@ -9,6 +9,47 @@ evaluation it makes along the way.
 \section{The loop}
 \label{sec:hybrid-loop}
 
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[
+      font=\small, node distance=5mm and 9mm,
+      box/.style={draw=accent, fill=accentsoft, rounded corners=2pt, align=center,
+                  minimum width=44mm, minimum height=9mm, inner sep=4pt},
+      cheap/.style={box, fill=white},
+      test/.style={draw=accent, fill=white, diamond, aspect=2.4, align=center, inner sep=1pt},
+      done/.style={box, draw=teal!60!black, fill=teal!8},
+      arr/.style={-{Stealth[length=2.2mm]}, draw=accent, thick},
+      lbl/.style={font=\footnotesize, text=black!70}]
+    \node[box]   (r0)    {\textbf{Round 0}: short expensive MCMC\\+ regularization points};
+    \node[cheap, left=of r0, minimum width=34mm] (seed) {existing evaluations\\(round 0 skipped)};
+    \node[cheap, below=of r0]    (train) {training set};
+    \node[cheap, below=of train] (fit)   {\textbf{fit} the surrogate};
+    \node[cheap, below=of fit]   (samp)  {\textbf{sample} it: cheap chain,\\refining depth};
+    \node[box,   below=of samp]  (val)   {\textbf{validate}: $N$ expensive\\evaluations on its posterior};
+    \node[test,  below=of val]   (pass)  {criteria\\met?};
+    \node[box,   below=of pass]  (ver)   {\textbf{verify}: re-sample to reporting\\depth, validate again};
+    \node[test,  below=of ver]   (vpass) {still\\met?};
+    \node[done,  below=of vpass] (out)   {return the posterior};
+    \draw[arr] (r0) -- (train);
+    \draw[arr] (seed) |- (train);
+    \draw[arr] (train) -- (fit);
+    \draw[arr] (fit) -- (samp);
+    \draw[arr] (samp) -- (val);
+    \draw[arr] (val) -- (pass);
+    \draw[arr] (pass) -- node[lbl, right] {yes} (ver);
+    \draw[arr] (ver) -- (vpass);
+    \draw[arr] (vpass) -- node[lbl, right] {yes} (out);
+    \coordinate (back) at ($(train.east)+(22mm,0)$);
+    \draw[arr] (pass.east) -- node[lbl, above, pos=0.35] {no} (pass.east -| back) -- (back) -- (train.east);
+    \draw[arr] (vpass.east) -- node[lbl, above, pos=0.35] {no} (vpass.east -| back) -- (pass.east -| back);
+    \node[lbl, align=left, anchor=west] at ($(back)!0.5!(pass.east -| back) + (1.5mm,0)$)
+      {validation points\\join the\\training set};
+  \end{tikzpicture}
+  \caption{The loop. Shaded boxes spend expensive evaluations, white boxes only cheap ones. Every
+           expensive evaluation, including those of a verification, ends up in the training set.}
+  \label{fig:hybrid-loop}
+\end{figure}
+
 \begin{enumerate}[leftmargin=*, label=\textbf{\arabic*.}]
   \item \textbf{Round 0.} A \emph{short} expensive MCMC, plus optional
         \code{num_regularization_points}, generates the initial training set. Its walkers --- the
@@ -49,6 +90,9 @@ an earlier study --- pass them as \code{initial_train_points} and \code{initial_
 is skipped and the first surrogate is fitted on them directly; \code{init_points} is then not needed,
 and the evaluations do not count towards \code{num_expensive_evals}, which records only what the run
 itself spent. The regularization points are part of round 0, so they are skipped too, with a warning.
+A typical source is an earlier plain \code{slurm_mcmc} on the expensive function that was taking too
+long to converge: stop it, and hand its whole history to the hybrid pipeline, so that none of the
+evaluations it has already paid for is wasted.
 \begin{lstlisting}
 pool = status['slurm_pool']                 # from a previous slurm_mcmc
 result = slurm_mcmc_hybrid(..., initial_train_points=pool.points_history,
@@ -91,17 +135,33 @@ $d$ is a real error. The weighting makes $\varepsilon$ an average under the \emp
 posterior: an error where the true probability is high counts far more than the same error in the
 tails.
 
-\subsection{Degeneracy guard}
+\subsection{Weight efficiency}
 
-$\varepsilon$ alone is not safe. If the weights collapse onto a few points, it is computed from
-those points alone and can be arbitrarily small --- exactly zero for a single dominating point ---
-while the surrogate is in fact terrible. The number of validation points that effectively carry the
-weight is
+$\varepsilon$ alone is not safe, for two reasons. First, if the weights collapse onto a few points,
+$\varepsilon$ is computed from those points alone and can be arbitrarily small --- exactly zero for a
+single dominating point --- while the surrogate is in fact terrible. Second, and more commonly, the
+weighting that makes $\varepsilon$ an average under the expensive posterior also makes it blind to
+surrogate mass where the expensive posterior has none: a validation point with $d_i \ll 0$ gets
+$w_i \approx 0$ and drops out of \cref{eq:epsilon}. A surrogate posterior with a spurious lobe, or
+with tails far too wide, can therefore pass the accuracy test while a large fraction of the samples
+it reports are wrong. Both failures show in how evenly the weights are spread, measured by the
+\emph{weight efficiency} --- the importance-sampling (Kish) efficiency of the $N$ validation points:
 \begin{equation}
-  \ESSw = \frac{\left(\sum_i w_i\right)^2}{\sum_i w_i^2} \in [1, N],
+  \effw = \frac{\left(\sum_i w_i\right)^2}{N\sum_i w_i^2} \in \left[\tfrac{1}{N},\, 1\right].
+  \label{eq:weight-efficiency}
 \end{equation}
-and a run is never declared converged while $\ESSw <$ \code{min_ess_weights}. $\ESSw$ counts
-validation points and is unrelated to the ESS of a chain, $N/\tau$, of \cref{eq:ess}.
+$N\effw$ is the number of validation points that effectively carry the weight. If a fraction $s$ of
+the surrogate posterior lies where the expensive one is negligible, and the rest is accurate,
+$\effw \approx 1 - s$, so a floor on $\effw$ is a bound on the junk fraction of the reported
+posterior. When $d$ is roughly Gaussian with spread $\varepsilon$, $\effw \approx e^{-\varepsilon^2}$:
+$0.99$ at the default $\varepsilon^\ast = 0.1$, so a genuinely converged surrogate clears the default
+floor \code{min_weight_efficiency}$\,= 0.9$ easily, while a surrogate with more than about 10\% of its
+mass in the wrong place, or with a few dominating points, never converges. The floor is equivalent
+to $\varepsilon \lesssim 0.32$ for Gaussian errors, so with a looser \code{log_error_threshold} than
+that it becomes the binding criterion. Its resolution is set by $N$: the scatter of $\effw$ near
+$0.9$ is about $\sqrt{0.09/N}$, $0.02$ at $N = 200$, which is one reason for the floor of 200 in the
+default \code{num_validation_points}. $\effw$ is printed per round as the \code{w_eff} column of the
+diagnostics (\cref{sec:hybrid-diagnostics}).
 
 \subsection{Posterior stability}
 
@@ -127,16 +187,19 @@ therefore never drops below three times that noise floor:
 \end{equation}
 Without the floor a tolerance of 0.1 would be unreachable at realistic chain depths: at the ESS of
 95--380 in the worked example, the floor alone is 0.23--0.42. The test needs two rounds, so a run
-cannot converge in round 1 while it is enabled; \code{posterior_shift_tolerance=None} switches it
-off.
+cannot converge in round 1 while it is enabled. It is off by default
+(\code{posterior_shift_tolerance=None}), which keeps the test to accuracy and weight efficiency;
+setting it, e.g. to 0.1, also requires the posterior to have stopped moving, which catches a surrogate
+that is accurate on its current posterior but still improving between rounds.
 
 \subsection{The convergence test}
 
-All three conditions must hold simultaneously:
+All the conditions enabled must hold simultaneously; the third only when
+\code{posterior_shift_tolerance} is set:
 \begin{gather}
   \varepsilon \le \texttt{log\_error\_threshold},
   \qquad
-  \ESSw \ge \texttt{min\_ess\_weights},
+  \effw \ge \texttt{min\_weight\_efficiency},
   \notag\\
   \delta \le \max\!\left(\texttt{posterior\_shift\_tolerance},\ \text{noise floor}\right).
 \end{gather}
@@ -153,10 +216,31 @@ hierarchical or multimodal, spend some budget on \code{num_regularization_points
 \section{Two sampling depths}
 \label{sec:two-depths}
 
-The two chain criteria of \cref{sec:mcmc-convergence} are applied at two depths. The surrogate
-chain runs \code{num_surrogate_iters} iterations, and is extended in blocks of that size, on the same
-sampler, until the criteria of its tier hold --- or \code{max_surrogate_iters_multiplier} blocks
-have been spent, which is logged as a warning.
+The two chain criteria of \cref{sec:mcmc-convergence} are applied at two depths. Once the
+autocorrelation time $\tau$ is known, the floors of a depth fix the chain length it needs: with $\Nc$
+walkers and a burn-in fraction $b$, $\ESS = \Nc(1-b)\Lc/\tau$, so
+\begin{equation}
+  \Lc \;\ge\; \max\!\left(\frac{\ESS_{\min}\,\tau}{\Nc(1-b)},\ (\Lc/\tau)_{\min}\,\tau\right).
+  \label{eq:chain-length}
+\end{equation}
+$\tau$ depends strongly on the target and is not known in advance, but it is measured on every chain.
+By default (\code{num_surrogate_iters='auto'}) each chain is therefore sized from a $\tau$ already
+measured, and starts 20\% past the length \cref{eq:chain-length} gives for it. A refining chain takes
+the $\tau$ of the chain before it. A verifying chain takes the largest $\tau$ of the run: the
+refining chain before it is too short to measure $\tau$ well, and $\tau$ measured on a short chain is
+biased low. Only the first chain of a run starts from a guess, $\tau = 10\,d$, a typical value for
+the stretch move on a well-shaped posterior. The chain is then extended, on the same sampler, to the
+length \cref{eq:chain-length} gives for its re-measured $\tau$, until the floors of its depth hold.
+
+Some posteriors never let it get there: when the walkers visit a long arm rarely and stay a long
+time, $\tau$ keeps growing with the chain, and $\Lc/\tau$ does not rise however long the chain is. A
+chain whose $\Lc/\tau$ has not risen over two extensions in a row is therefore stopped, with a
+warning, and \code{max_surrogate_iters} ($10^6$ by default) caps every chain as a last resort. A
+verification whose chain stops short of its floors is never accepted, since its effective sample
+size is overstated and its stability test too lenient; it is recorded as blocked by
+\code{chain-depth}. When a target's slow direction puts the verification floors out of reach,
+lowering \code{verify_iters_per_tau} or \code{verify_surrogate_ess} is a deliberate choice, made
+visible in the settings. An integer \code{num_surrogate_iters} fixes only the starting length.
 
 \begin{center}
 \small
@@ -164,17 +248,18 @@ have been spent, which is logged as a warning.
   \toprule
   & \textbf{refining} --- posterior discarded at the next fit & \textbf{verifying} --- posterior reported \\
   \midrule
-  effective samples, $N/\tau$ & \code{refine_surrogate_ess}: \code{None} $\to 10\,d$ & \code{final_surrogate_ess}: \code{None} $\to 100\,d$ \\
-  chain length, $\Lc/\tau$    & \code{refine_iters_per_tau}: \code{None} $\to$ not demanded & \code{final_iters_per_tau}: $50$ \\
+  effective samples, $N/\tau$ & \code{refine_surrogate_ess}: \code{'auto'} $\to 10\,d$ & \code{verify_surrogate_ess}: \code{'auto'} $\to 100\,d$ \\
+  chain length, $\Lc/\tau$    & \code{refine_iters_per_tau}: \code{'auto'} $\to 10$ & \code{verify_iters_per_tau}: \code{'auto'} $\to 50$ \\
   \bottomrule
 \end{tabularx}
 \end{center}
 
-The defaults are the two ends of the advised band of $10$--$100\times d$. The length criterion is not
-demanded while refining, for two reasons: that posterior is discarded, and $\tau$ cannot be measured
-reliably on a short chain anyway --- that is what $\Lc \ge 50\tau$ \emph{means} --- so a floor on it
-would be enforced against a number that is itself unreliable. Samples and $\tau$ are always taken
-after discarding \code{surrogate_burnin_fraction} of the chain.
+The ESS defaults are the two ends of the advised band of $10$--$100\times d$. The length floors
+differ in purpose. While refining, $\Lc \ge 10\tau$ is only the shortest chain whose own $\tau$ can be
+estimated at all (\texttt{emcee}'s window takes $5\tau$); the posterior is discarded at the next fit, so
+nothing more is asked. While verifying, $\Lc \ge 50\tau$ is \texttt{emcee}'s rule for a reliable $\tau$,
+since that posterior is the one reported. \code{None} switches either floor off. Samples and $\tau$
+are always taken after discarding \code{surrogate_burnin_fraction} of the chain.
 
 \code{max_verification_attempts}, by default \code{None}, lets a failed verification send the run
 back to refining as often as the target needs, since \code{num_rounds_max} bounds it anyway. A finite
@@ -266,7 +351,9 @@ itself is the bottleneck.
 The training set only grows: every expensive evaluation is kept. What enters each fit can be
 limited. \code{train_log_prob_trim_range} drops points more than that many nats below the best
 one --- their probability is $e^{-100}$ at the default, so no MCMC will ever visit them, and they only
-make the fit more expensive --- as long as at least \code{min_train_points_after_trim} points remain.
+make the fit more expensive. The trim is skipped in any round where it would leave fewer than
+\code{min_train_points_after_trim} points, $10\,d$ by default: early on, a single lucky evaluation far
+above the rest would otherwise trim the training set to a handful of points.
 Below about 20 nats accuracy collapses, because the surrogate then has no evidence that the
 probability is low away from the peak. \code{max_train_points} caps the fit with a uniform random
 subsample, which preserves spatial coverage; keeping the highest-probability points instead would
@@ -335,10 +422,11 @@ described at the end of this chapter.
 \section{Worked example: a 3D Rosenbrock}
 \label{sec:hybrid-example}
 
-This is exactly what \code{example_mcmc_hybrid.py} does, so every number below is reproducible by
-running it. The target is minus the 3D Rosenbrock function of \cref{eq:rosenbrock}: a narrow,
-curved, banana-shaped posterior. Because it is analytic, a plain expensive MCMC on it is affordable,
-and that gives a reference to judge the hybrid run against --- so the reference comes first.
+This is what \code{example_mcmc_hybrid.py} does, with the settings below, so every number in this
+section is reproducible by running it. The target is minus the 3D Rosenbrock function of
+\cref{eq:rosenbrock}: a narrow, curved, banana-shaped posterior. Because it is analytic, a plain
+expensive MCMC on it is affordable, and that gives a reference to judge the hybrid run against ---
+so the reference comes first.
 
 \subsection{The expensive reference}
 
@@ -358,62 +446,42 @@ chain, after discarding the first 20\% as burn-in.
   \label{fig:hybrid-reference}
 \end{figure}
 
-\begin{center}
-\small
-\begin{tabular}{@{}rrlrr@{}}
-  \toprule
-  \textbf{stop (iteration)} & $\Lc$ & $\tau$ \textbf{per parameter} & $\Lc/\tau$ & \textbf{ESS} \\
-  \midrule
-  36\,000  & 16\,000 & 477, 441, 473    & 34 & 1\,006 \\
-  52\,000  & 32\,000 & 645, 481, 529    & 50 & 1\,488 \\
-  68\,000  & 48\,000 & 754, 533, 617    & 64 & 1\,910 \\
-  84\,000  & 64\,000 & 828, 560, 649    & 77 & 2\,318 \\
-  100\,000 & 80\,000 & 1\,035, 589, 685 & 77 & 2\,320 \\
-  \bottomrule
-\end{tabular}
-\end{center}
-
-The distributions agree from the third stop on, and $\Lc/\tau$ clears 50. But the caveat of
-\cref{sec:mcmc-convergence} applies: $\Lc/\tau$ only means something once $\tau$ has stopped
-growing, and $\tau(x_0)$ has not --- its last step is the largest. The cause is a long arm of the
-posterior at negative $x_0$: walkers enter it rarely (about 8\% of the mass lies at $x_0 < 0$), and a
-single visit can last over 13\,000 iterations, so the longer the chain, the longer the excursions it
-has seen. The moments are stable within their error bars, so the comparison below stands, but the
-reference's own uncertainty on the width in $x_0$ may be understated.
+The distributions agree at every stop, and $\Lc/\tau$ grows from 25 to 82. That growth is only
+meaningful because $\tau$ has stopped growing (\cref{sec:mcmc-convergence}): it settles at about
+850--1\,000 from the third stop on. The slowest part of the posterior is its arm at negative $x_0$,
+which holds 7.4\% of the mass; walkers enter it rarely, and the longest single visit lasts 3\,511
+iterations, well inside the chain.
 
 \subsection{The hybrid run}
 
-A Gaussian-process surrogate with the default quadratic mean function. The settings that differ from
-the library defaults:
+A \code{DistributedGPSurrogate} with the default quadratic mean function. The settings that differ
+from the library defaults:
 
 \begin{center}
 \small
-\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.40\linewidth}>{\raggedright\arraybackslash}p{0.12\linewidth}L@{}}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.40\linewidth}>{\raggedright\arraybackslash}p{0.17\linewidth}L@{}}
   \toprule
   \textbf{setting} & \textbf{value} & \textbf{why} \\
   \midrule
+  \code{surrogate} & \code{DistributedGP} & experts of at most 500 points, fitted in parallel (\code{parallel='joblib'}) \\
   expensive walkers, \code{len(init_points)} & $10\,d = 30$ & the cluster parallelism of the expensive stage \\
   \code{num_expensive_iters}, \code{num_regularization_points} & 10, 50 & a deliberately small round-0 budget, so refinement has work to do \\
-  \code{num_surrogate_iters}, \code{max_surrogate_iters_multiplier} & 5\,000, 30 & room for the verification chain to reach reporting depth \\
-  \code{log_error_threshold} & 0.01 & demanding, so the loop refines for several rounds \\
-  \code{posterior_shift_tolerance} & \code{None} & stability not tested: the run stops on accuracy alone \\
-  \code{num_rounds_max} & 30 & this target needs more than a handful \\
+  \code{num_rounds_max} & 30 & a tighter cap than the default 100, to bound the example's cost \\
   \code{save_posterior_samples} & 2\,000 & keeps each round's posterior \\
   \bottomrule
 \end{tabularx}
 \end{center}
 
+Everything else is at its default, including $\varepsilon \le 0.1$ nats, $\effw \ge 0.9$, no
+posterior-shift test (\code{posterior_shift_tolerance=None}), chains sized from $\tau$, and 200
+validation points per round (\code{'auto'}, $\max(200, 10\,d)$).
+
 \begin{keypoint}[Result]
-Converged in \textbf{7 rounds on 1\,380 expensive evaluations}, about 16 minutes --- 0.05\% of the
-reference's evaluations. Three verification pushes were spent; two were rejected.
+Converged in \textbf{4 rounds on 1\,580 expensive evaluations}, about 15 minutes --- 0.05\% of the
+reference's evaluations. Two verifications were run; the first was rejected.
 \end{keypoint}
 
 \subsection{Convergence, round by round}
-
-The posterior shift is in units of \textbf{posterior standard deviations} --- the ``[sd]'' on its
-axis and in the table below. It is $\delta$ of \cref{eq:delta}: a shift of 0.1 means that, since the
-previous round, no parameter's posterior mean or standard deviation moved by more than a tenth of that
-parameter's posterior standard deviation.
 
 A verified round has \textbf{two rows}: $n$ for the refinement chain, whose metrics passed and so
 triggered the verification, and $n$v for the verification chain that then judged it. $n_{\mathrm{exp}}$
@@ -422,59 +490,30 @@ entered the fit; the two rows share one fit, so both are given on the first row 
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\linewidth]{example_mcmc_hybrid_convergence.png}
-  \caption{Top: the criteria, surrogate accuracy $\varepsilon$ and posterior shift $\delta$, with
-           the region a converged run must stay out of shaded. Bottom: how deeply the surrogate
-           chain was sampled, $\Lc/\tau$ and ESS against their floors. Green squares are
-           verification chains, blue circles refinement chains.}
+  \includegraphics[width=0.8\linewidth]{example_mcmc_hybrid_convergence.png}
+  \caption{Top: the criteria, surrogate accuracy $\varepsilon$ and weight efficiency $\effw$, with
+           the region a converged run must stay out of shaded. The posterior shift is not tested in
+           this run, so it has no panel. Bottom: how deeply the surrogate chain was sampled,
+           $\Lc/\tau$ and ESS against their floors. Green squares are verification chains, blue
+           circles refinement chains.}
   \label{fig:hybrid-convergence}
 \end{figure}
 
 \begin{center}
 \small
-\begin{tabular}{@{}lrrrrrrr@{}}
+\begin{tabular}{@{}lrrrrrrrr@{}}
   \toprule
-  \textbf{round} & $n_{\mathrm{exp}}$ & $n_{\mathrm{train}}$ & $\varepsilon$ [nats] & $\delta$ [sd] & $\Lc$ & $\Lc/\tau$ & ESS \\
+  \textbf{round} & $n_{\mathrm{exp}}$ & $n_{\mathrm{train}}$ & $\varepsilon$ [nats] & $\effw$ & $\delta$ [sd] & $\Lc$ & $\Lc/\tau$ & ESS \\
   \midrule
-  1  & 380    & 123 & 0.7636 & ---   & 5\,000  & 20.3 & 130 \\
-  2  & 480    & 223 & 0.0179 & 0.867 & 5\,000  & 18.9 & 121 \\
-  3  & 580    & 323 & 0.0078 & 0.043 & 5\,000  & 19.0 & 122 \\
-  3v &        &     & 0.0239 & 0.153 & 20\,000 & 51.6 & 330 \\
-  4  & 780    & 523 & 0.0098 & 0.224 & 5\,000  & 18.4 & 118 \\
-  4v &        &     & 0.0264 & 0.149 & 40\,000 & 59.4 & 380 \\
-  5  & 980    & 723 & 0.0280 & 0.101 & 5\,000  & 17.1 & 109 \\
-  6  & 1\,080 & 823 & 0.0102 & 0.243 & 5\,000  & 18.1 & 116 \\
-  7  & 1\,180 & 923 & 0.0035 & 0.117 & 5\,000  & 14.8 & 95 \\
-  7v &        &     & 0.0036 & 0.112 & 30\,000 & 50.6 & 324 \\
+  1  & 380    & 123 & 0.2824 & 0.910 & ---   & 360     & 10.5 & 67 \\
+  2  & 580    & 323 & 0.3004 & 0.899 & 0.651 & 410     & 10.9 & 69 \\
+  3  & 780    & 523 & 0.0599 & 0.996 & 0.277 & 454     & 13.3 & 85 \\
+  3v &        &     & 0.2725 & 0.914 & 0.279 & 30\,154 & 65.2 & 417 \\
+  4  & 1\,180 & 923 & 0.0152 & 1.000 & 0.200 & 5\,552  & 25.1 & 161 \\
+  4v &        &     & 0.0480 & 0.998 & 0.210 & 65\,670 & 57.2 & 366 \\
   \bottomrule
 \end{tabular}
 \end{center}
-
-\begin{itemize}
-  \item \textbf{Verification did the deciding work.} Rounds 3 and 4 passed on their refinement
-        chains, at $\varepsilon = 0.0078$ and $0.0098$; the \emph{same surrogates}, re-sampled
-        properly and scored on fresh batches, gave $0.0239$ and $0.0264$ and were rejected. Round 7
-        passed both, and rounds 5 and 6 missed the threshold on their refinement chains. That the
-        fresh estimate came out higher each time is expected: a round is only verified when its
-        refinement $\varepsilon$ happened to land below the threshold, and a single 100-point
-        estimate scatters. A stop decided on one batch is partly luck.
-  \item \textbf{The two sampling depths are explicit in the bottom row.} Refinement chains ran the
-        minimum 5\,000 iterations at $\Lc/\tau \approx 15$--20, deliberately short of 50, with ESS of
-        95--130 against their floor of $10\,d = 30$. The three verification chains were extended to
-        20\,000--40\,000 iterations, until both $\Lc/\tau \ge 50$ and ESS $\ge 100\,d = 300$ held.
-  \item \textbf{Stability was not tested, so the shift column is for information.} From round 3 on,
-        every shift is 0.04--0.24 posterior widths, against a noise floor of 0.23--0.42. Every one
-        sits below its floor, so had the default tolerance of 0.1 been on, the run would have taken
-        exactly the same path.
-  \item \textbf{$n_{\mathrm{exp}}$ against $n_{\mathrm{train}}$ is the trim at work.} The yield
-        $n_{\mathrm{train}}/n_{\mathrm{exp}}$ climbs from 32\% in round 1 to 78\% by round 7. Every
-        trimmed point comes from round 0: at the last fit, 207 of the 330 points of the short initial
-        chain, which set out from dispersed walkers, and all 50 regularization points. Not one
-        of the 800 points added after round 0 was trimmed, because they were drawn from the posterior
-        itself.
-  \item \textbf{A verified round costs 200 evaluations, not 100}, because both the refinement batch
-        and the verification batch are recycled into the training set.
-\end{itemize}
 
 \subsection{The posterior, round by round}
 
@@ -486,15 +525,15 @@ entered the fit; the two rows share one fit, so both are given on the first row 
   \label{fig:hybrid-rounds}
 \end{figure}
 
-Round 1 ($\varepsilon = 0.76$) is visibly wrong: a single narrow peak, too high in all three
-parameters. From round 2 on the rounds follow the reference's shape, and they reach further into the
-long arm at negative $x_0$ as the training data grows: the mass at $x_0 < -0.5$ is 0.6\% in round 2,
-1.4\% in round 3, and between 1\% and 4\% after that, against the reference's 2.8\%. What no round
-reaches is the other end of the banana, the upper tails of $x_1$ and $x_2$ where the valley climbs
-steeply. $\varepsilon$, being measured on points drawn from the surrogate posterior, cannot see a
-region the chain never visits. The samples behind the figure are kept in
-\code{work_dir/posteriors/round{k}.npy} when \code{save_posterior_samples} is set; nothing else
-records them.
+Round 1 ($\varepsilon = 0.28$) is visibly wrong: too low in all three parameters, with means
+$(0.50, 0.47, 0.40)$ against the reference's $(0.80, 0.86, 1.12)$. From round 2 on the rounds follow
+the reference's shape. The arm at negative $x_0$ comes and goes: the mass at $x_0 < -0.5$ is 2.2,
+3.0, 0.1 and 2.5\% in rounds 1--4, against the reference's 2.1\%. What no round reaches is the other
+end of the banana, the upper tails of $x_1$ and $x_2$ where the valley climbs steeply: the 99.5th
+percentile of $x_1$ is at most 1.89, against the reference's 2.87. $\varepsilon$, being measured on
+points drawn from the surrogate posterior, cannot see a region the chain never visits. The samples
+behind the figure are kept in \code{work_dir/posteriors/posterior_round{k}.npy} when
+\code{save_posterior_samples} is set; nothing else records them.
 
 \subsection{Where the evaluations went}
 
@@ -510,8 +549,8 @@ The two layers live in different spaces: the background is a \emph{slice} with t
 parameter pinned at the optimum, while the dots are a \emph{projection} of the full 3D posterior. A
 bright patch with no dots on it, such as the lobe near $x_0 = -1$, is therefore not by itself evidence
 of a missed mode. What does matter is visible in the top-left panel: the red draws follow the valley
-along the arm at negative $x_0$ down to about $-0.8$, so this run did find it, but at the other end
-they stop near $x_1 \approx 2.1$, where the reference continues higher.
+along the arm at negative $x_0$ down to about $-0.9$, so this run did find it, but at the other end
+they stop near $x_1 \approx 1.9$, where the reference continues to about 2.9.
 
 \subsection{The posterior against the reference}
 
@@ -521,27 +560,12 @@ they stop near $x_1 \approx 2.1$, where the reference continues higher.
   \caption{The hybrid posterior (black) against the expensive reference (blue).}
 \end{figure}
 
-\begin{center}
-\small
-\begin{tabular}{@{}lccc@{}}
-  \toprule
-  & $x_0$ & $x_1$ & $x_2$ \\
-  \midrule
-  hybrid standard deviation    & 0.492 & 0.527 & 0.962 \\
-  reference standard deviation & $0.493 \pm 0.016$ & $0.594 \pm 0.006$ & $1.296 \pm 0.030$ \\
-  hybrid too narrow by         & 0\% & \textbf{11\%} & \textbf{26\%} \\
-  \bottomrule
-\end{tabular}
-\end{center}
-
-The reference's error bars are batch means over ten blocks of 8\,000 iterations. The centres agree
-to within 0.14 posterior widths. The width in $x_0$ agrees too: the arm with $x_0 < -0.5$ holds
-3.8\% of the hybrid's mass against $2.8\% \pm 0.5\%$ of the reference's. The widths in $x_1$ and
-$x_2$ do not, and the upper tails say why: $x_1 > 2$ holds 4.0\% of the reference's mass and 0.4\%
-of the hybrid's, and $x_2 > 4$ the same. The run never sampled that end of the banana, so it never
-scored it, and every criterion passed regardless. Which tail is cut is partly chance: an earlier run
-of this example, on a different random stream, cut the arm at negative $x_0$ as well and came out
-31\% too narrow in $x_0$.
+The centres agree to within 0.17 posterior widths, and the width in $x_0$ agrees too, 3\% narrower
+than the reference's. The widths in $x_1$ and $x_2$ do not: the hybrid is 17\% and 37\% too narrow
+there, far outside the reference's own uncertainty ($\pm 2.4\%$ and $\pm 5.8\%$, batch means over ten
+blocks). The upper tails say why: $x_1 > 2$ and $x_2 > 4$ each hold $4.6\% \pm 0.6\%$ of the
+reference's mass and none of the hybrid's. The run never sampled that end of the banana, so it never
+scored it, and every criterion passed regardless.
 
 \begin{cautionbox}[Reading hybrid widths]
 Treat widths and tail quantities from a hybrid run as unconfirmed unless an independent expensive
@@ -549,44 +573,30 @@ chain checks them. Means are far more robust than tails.
 \end{cautionbox}
 
 \subsection{What the run writes}
+\label{sec:hybrid-diagnostics}
 
 For convenience, the run writes \code{work_dir/hybrid_diagnostics.txt} automatically. It is
 rewritten in full every round, so a killed run still leaves its complete history and a resumed run
-continues the same table. It is reproduced here in part only to explain its content. It opens with
-the run's parameters and its evaluation budget:
+continues the same table. It is also written when a verification starts, with the refinement row and
+a placeholder \code{<k>v verifying} row that the end of the round replaces, so a long verification
+shows as such. It opens with the run's parameters, each \code{'auto'} with the value it resolved to,
+and its expensive budget --- round 0, the regularization points, and what each round adds; here
+$330 + 50 = 380$ points before the first fit, then 200 per round and 200 more per verification,
+$380 + 4\times 200 + 2\times 200 = 1\,580$ in all. A legend describing every column follows, and
+then the per-round table, shown here with four columns dropped to fit the page: \code{surrogate},
+which names the class fitted that round and reads \code{DistributedGP} throughout here, and the
+timings \code{t_valid_s}, \code{t_refresh_s} and \code{t_round_s} --- the validation batch, the
+expensive refresh, and the round total.
 
-\begin{lstlisting}[style=plain, basicstyle=\ttfamily\footnotesize]
-expensive evaluations
-  round 0 MCMC: (num_expensive_iters + 1) * num_walkers = (10 + 1) * 30 = 330
-  regularization points: 50
-  => raw training points at the first surrogate fit = 330 + 50 = 380
-  each refinement round then adds num_validation_points = 100
-  (exact unless a proposed point repeats one already evaluated, or an evaluation
-   fails, in which case these are upper bounds)
-\end{lstlisting}
-
-Each verification spends one more validation batch, which is why this run's total is
-$380 + 7 \times 100 + 3 \times 100 = 1\,380$.
-
-A legend describing every column follows, and then the per-round table itself. Here is this run's,
-with four columns dropped to fit the page: \code{surrogate}, which names the class fitted that round
-and reads \code{GaussianProcess} throughout here, and the timings \code{t_valid_s},
-\code{t_refresh_s} and \code{t_round_s} --- the validation batch, the expensive refresh, and the
-round total.
-
-\begin{lstlisting}[style=plain, basicstyle=\ttfamily\scriptsize]
-round n_expensive n_train w_log_err post_shift surr_iters  Lc/tau  ess/tau  t_fit_s t_mcmc_s
---------------------------------------------------------------------------------------------
-    1         380     123    0.7636        inf       5000    20.3      130      2.9     14.3
-    2         480     223    0.0179      0.867       5000    18.9      121      2.4     16.4
-    3         580     323    0.0078      0.043       5000    19.0      122      7.6     18.5
-   3v                        0.0239      0.153      20000    51.6      330              81.0
-    4         780     523    0.0098      0.224       5000    18.4      118     20.1     19.4
-   4v                        0.0264      0.149      40000    59.4      380             190.6
-    5         980     723    0.0280      0.101       5000    17.1      109     42.0     26.1
-    6        1080     823    0.0102      0.243       5000    18.1      116     56.9     28.0
-    7        1180     923    0.0035      0.117       5000    14.8       95     65.8     30.8
-   7v                        0.0036      0.112      30000    50.6      324             226.4
+\begin{lstlisting}[style=plain, basicstyle={\ttfamily\fontsize{7.6}{9.2}\selectfont}]
+round n_expensive n_train w_log_err  w_eff post_shift shift_tol surr_iters  Lc/tau  ess/tau  t_fit_s t_mcmc_s
+-------------------------------------------------------------------------------------------------------------
+    1         380     123    0.2824  0.910        inf       off        360    10.5       67      2.3      2.4
+    2         580     323    0.3004  0.899      0.651       off        410    10.9       69      3.3      3.3
+    3         780     523    0.0599  0.996      0.277       off        454    13.3       85      7.6      4.3
+   3v                        0.2725  0.914      0.279       off      30154    65.2      417             236.2
+    4        1180     923    0.0152  1.000      0.200       off       5552    25.1      161     11.8     50.6
+   4v                        0.0480  0.998      0.210       off      65670    57.2      366             588.3
 \end{lstlisting}
 
 Reading across a row:
@@ -594,22 +604,20 @@ Reading across a row:
 \begin{itemize}
   \item \code{n_expensive} and \code{n_train} are the trim: what has been evaluated, and what
         entered the fit.
-  \item \code{w_log_err} and \code{post_shift} are the two criteria, $\varepsilon$ in nats and
-        $\delta$ in posterior standard deviations. They are what the run stops on --- here on
-        \code{w_log_err} alone, since \code{posterior_shift_tolerance} is \code{None}, but
-        \code{post_shift} is computed and printed regardless, so it can be read after the fact.
+  \item \code{w_log_err}, \code{w_eff} and \code{post_shift} are the three criteria:
+        $\varepsilon$ in nats, the weight efficiency $\effw$, and $\delta$ in posterior standard
+        deviations. \code{post_shift} is computed and printed even when
+        \code{posterior_shift_tolerance} is \code{None}, so it can be read after the fact.
         The \code{inf} of round 1 marks that there is no previous posterior to compare against yet.
+        \code{shift_tol} is the tolerance applied to \code{post_shift}, the requested one raised to
+        the noise floor; it reads \code{off} here, since the test is off.
   \item \code{surr_iters}, \code{Lc/tau} and \code{ess/tau} are how deeply the cheap chain was
         sampled: the length actually run, and what it bought in autocorrelation times and effective
-        samples. The refinement rows sit at the 5\,000-iteration minimum; the verification rows are
-        where \code{surr_iters} jumps to 20\,000--40\,000 until both floors are cleared. A run that
-        ends because its chains keep growing without clearing them shows it in these columns.
-  \item \code{t_fit_s} against \code{t_mcmc_s} is the pair worth watching. The fit grows with the
-        training set, 2.4\,s on 223 points to 65.8\,s on 923, while the cheap MCMC grows with the
-        chain length asked of it: the 226.4\,s of round 7's verification is a 30\,000-iteration
-        chain on the largest surrogate. On a long run it is the fits, not the sampling, that come to
-        dominate --- which is when \code{max_train_points} or a \code{DistributedGPSurrogate}
-        becomes worthwhile.
+        samples. A chain that keeps growing without clearing its floors shows it here.
+  \item \code{t_fit_s} against \code{t_mcmc_s} is the pair worth watching. With experts of at
+        most 500 points the fit stays cheap, 2.3\,s on 123 points to 11.8\,s on 923; here it is the
+        sampling that dominates, 588.3\,s for the 65\,670 iterations of 4v. With a dense GP the
+        balance tips the other way as the training set grows.
   \item A verified round prints two rows, $n$ and $n$v, and the columns they share ---
         \code{n_expensive}, \code{n_train}, \code{surrogate} and \code{t_fit_s} --- are left empty
         on the second: one fit, one training set, scored twice.
@@ -618,7 +626,9 @@ Reading across a row:
 \section{Restarting, extending, and changing surrogate}
 
 With \code{save_restart=True}, the restart file is written atomically after round 0 and after every
-round, so a crash costs at most the round in progress. It carries the whole training set, which also
+round, so a crash costs at most the round in progress. It is also written when a verification starts,
+since that is usually the longest stretch of a round: a run stopped inside one keeps the refinement
+batch it has already evaluated, and on resume redoes the round on the larger training set. It carries the whole training set, which also
 makes it the cleanest way to \emph{extend} a finished run: raise \code{num_rounds_max} and resume
 with \code{load_restart=True}.
 
@@ -638,7 +648,7 @@ slurm_mcmc_hybrid(..., load_restart=True, save_restart=True, work_dir='run17',
                                                    parallel='joblib'))
 \end{lstlisting}
 Every combination works, in either direction, and the switch is recorded per round. With
-\code{save_surrogate}, fitted surrogates are written to \code{work_dir/surrogates/round{k}.pkl}:
+\code{save_surrogate}, fitted surrogates are written to \code{work_dir/surrogates/surrogate_round{k}.pkl}:
 \code{'latest'} keeps only the most recent, enough for a resumed round to skip its refit;
 \code{'all'} keeps every round, at roughly $8n^2$ bytes each. A saved fit is reused only when the
 round, the training-set size and the surrogate class all match.
@@ -654,7 +664,8 @@ across a restart, so it is where a switch of surrogate --- or a fit that is beco
 
 The returned dictionary contains the final posterior \code{samples}; \code{converged},
 \code{num_rounds} and \code{num_expensive_evals}; per-round lists of every quantity that decided the
-run, including \code{weighted_log_error_per_round}, \code{posterior_displacement_per_round},
+run, including \code{weighted_log_error_per_round}, \code{weight_efficiency_per_round},
+\code{posterior_displacement_per_round},
 \code{surrogate_iters_per_round}, \code{surrogate_tau_per_round}, \code{surrogate_ess_per_round},
 \code{verified_per_round} and \code{blocking_criteria_per_round}, which names the criterion that held
 each round back; \code{round_records}, one record per measurement including both rows of a verified
@@ -663,16 +674,20 @@ of the final validation; and timings. The emulator's own uncertainty on the vali
 \code{surrogate_std_per_round}, lets the common assumption that it is negligible be checked rather
 than assumed.
 
-Warnings are logged when refinement is not improving fast enough to be worth continuing; when
-posterior mass piles up against \code{param_bounds} or the confinement envelope, which can signal a
+Warnings are logged when posterior mass piles up against \code{param_bounds} or the confinement envelope, which can signal a
 model error, an unidentifiable parameter or bounds set too tightly; and when a surrogate chain hits its
-iteration cap short of its criteria. The stall warning is tuned on \code{HybridMCMCConfig} by
-\code{stall_relative_improvement}, \code{stall_window} and \code{stall_significance}.
+iteration cap short of its criteria.
 
 \section{Argument reference}
 \label{sec:hybrid-args}
 
-Arguments shared with the other functions are in \cref{app:common}.
+Arguments shared with the other functions are in \cref{app:common}. The \emph{default} column is
+what an omitted argument gets. Where that is \code{'auto'}, the setting is resolved for each run by a
+rule in the number of parameters $d$, given in the description, and the diagnostics file prints
+the value it resolved to (\cref{sec:hybrid-diagnostics}). \code{None}, where accepted, switches a
+criterion or cap off. A \emph{recommendation} is advice for choosing a value, not a default. Settings
+marked \emph{heuristic} have no derivation behind their value: they are reasonable starting points
+that seldom need changing.
 
 \subsubsection{Starting the run and its expensive budget}
 \begin{argtable}
@@ -680,43 +695,44 @@ Arguments shared with the other functions are in \cref{app:common}.
   \code{init_points} & \code{None} & starting walkers of the round-0 MCMC, shape $(\Nc, d)$; required unless \code{initial_train_points} is given, and whenever \code{num_expensive_iters_per_round} $> 0$ \\
   \code{param_bounds} & \code{None} & a hard box that constrains the posterior; \code{None} runs unbounded (\cref{sec:unbounded}) \\
   \code{constraint_fun} & \code{None} & feasible when $\le 0$ \\
-  \code{num_expensive_iters} & \code{20} & length of the round-0 MCMC; with the walkers, it sets the initial training set, $(\text{iters}+1)\times\Nc$ points \\
+  \code{num_expensive_iters} & required & length of the round-0 MCMC, costing $(\text{iters}+1)\times\Nc$ evaluations, which become the initial training set. This is the user's budget, so it has no default: an error is raised if it is missing, unless \code{initial_train_points} is given, in which case it is unused. \code{0} is valid and evaluates only the starting walkers \\
   \code{initial_train_points}, \code{initial_train_values} & \code{None} & existing evaluations, shapes $(n, d)$ and $(n)$; round 0 is skipped \\
-  \code{num_regularization_points} & \code{0} & points placed without reference to a posterior: uniform in the box, or around the training data when unbounded \\
-  \code{num_validation_points} & \code{100} & expensive evaluations per round; sets both the precision of the test and the cost of a round \\
-  \code{num_rounds_max} & \code{5} & safety cap on the number of rounds \\
+  \code{num_regularization_points} & \code{0} & points placed without reference to a posterior: uniform in the box, or around the training data when unbounded. Off by default because every one is an expensive evaluation. Recommendation: about $10\,d$ when the target may be multimodal or have mass far from \code{init_points}, since these are the only evaluations that can find it \\
+  \code{num_validation_points} & \code{'auto'} & expensive evaluations per round, and the main per-round cost; they also join the training set. \code{'auto'} is $\max(200, 10\,d)$: 200 resolves $\varepsilon$ to about 5\% (its relative scatter is $\approx 1/\sqrt{2N}$) and $\effw$ to about $0.02$, and $10\,d$ is roughly the number of points a Gaussian process needs to resolve a $d$-dimensional region \\
+  \code{num_rounds_max} & \code{100} & safety cap on the number of refinement rounds, meant to be large enough that convergence always ends the run first. It also bounds the worst-case budget, round 0 plus \code{num_rounds_max} validation batches, and one more batch per verification, so lower it if that is more than can be afforded \\
   \code{num_expensive_iters_per_round} & \code{0} & optional expensive MCMC each round, started from the surrogate posterior, costing $(\text{iters}+1)\times\Nc$ evaluations \\
 \end{argtable}
 
 \subsubsection{Surrogate and its sampling}
 \begin{argtable}
   \code{surrogate} & \code{'gp'} & \code{'gp'}, \code{'polynomial'}, \code{DistributedGPSurrogate(...)}, or any object with \code{fit} and \code{predict} \\
-  \code{polynomial_degree} & \code{3} & for \code{surrogate='polynomial'} \\
-  \code{surrogate_uncertainty_penalty} & \code{1.0} & $\kappa$ in $\mu - \kappa\sigma$; \code{0} disables \\
-  \code{num_surrogate_iters} & \code{2000} & block size of the surrogate chain \\
-  \code{max_surrogate_iters_multiplier} & \code{8} & cap on the chain's extension, in blocks \\
-  \code{num_surrogate_walkers} & \code{None} & walkers of the surrogate chain; \code{None} is \texttt{emcee}'s minimum, $2d+2$ \\
-  \code{surrogate_burnin_fraction} & \code{0.2} & fraction of each chain discarded \\
-  \code{refine_surrogate_ess}, \code{final_surrogate_ess} & \code{None}, \code{None} & ESS floors of the two depths; $10\,d$ and $100\,d$ \\
-  \code{refine_iters_per_tau}, \code{final_iters_per_tau} & \code{None}, \code{50} & $\Lc/\tau$ floors of the two depths \\
-  \code{max_verification_attempts} & \code{None} & rejections allowed before the run gives up \\
+  \code{polynomial_degree} & \code{2} & for \code{surrogate='polynomial'}; a quadratic is exact for a Gaussian posterior, and higher degrees extrapolate worse \\
+  \code{surrogate_uncertainty_penalty} & \code{1.0} & $\kappa$ in $\mu - \kappa\sigma$, a one-standard-deviation lower bound (heuristic); \code{0} disables \\
+  \code{num_surrogate_iters} & \code{'auto'} & length of the surrogate chain; \code{'auto'} sizes each chain from the $\tau$ of the one before (\cref{sec:two-depths}), the first from $\tau = 10\,d$, and extends it until the floors of its depth hold. An integer fixes only the starting length \\
+  \code{max_surrogate_iters} & $10^6$ & absolute ceiling on a chain's length, a safety net only: a chain normally stops when its floors hold, or after two extensions in a row without progress in $\Lc/\tau$. \code{None} sets no ceiling \\
+  \code{num_surrogate_walkers} & \code{'auto'} & walkers of the surrogate chain; \code{'auto'} is \texttt{emcee}'s minimum, $2d+2$, because at fixed work the ESS does not depend on the walker count while $\Lc/\tau$ falls with it \\
+  \code{surrogate_burnin_fraction} & \code{0.2} & fraction of each chain discarded (a common convention) \\
+  \code{refine_surrogate_ess}, \code{verify_surrogate_ess} & \code{'auto'}, \code{'auto'} & ESS floors of the two depths (\cref{sec:two-depths}); \code{'auto'} is $10\,d$ and $100\,d$, the two ends of the advised band. \code{None} demands no floor \\
+  \code{refine_iters_per_tau}, \code{verify_iters_per_tau} & \code{'auto'}, \code{'auto'} & $\Lc/\tau$ floors of the two depths; \code{'auto'} is 10, the shortest chain whose own $\tau$ can be estimated, and 50, \texttt{emcee}'s rule for a reliable $\tau$. \code{None} demands no floor \\
+  \code{max_verification_attempts} & \code{None} & rejections allowed before the run gives up; \code{None} is unlimited, since \code{num_rounds_max} bounds them anyway \\
 \end{argtable}
 
 \subsubsection{Convergence and training data}
 \begin{argtable}
-  \code{log_error_threshold} & \code{0.1} & $\varepsilon^\ast$ in nats; tighten to 0.01--0.02 for tail quantities \\
-  \code{min_ess_weights} & \code{10.0} & the degeneracy guard \\
-  \code{posterior_shift_tolerance} & \code{0.1} & $\delta^\ast$ in posterior standard deviations; \code{None} disables \\
-  \code{train_log_prob_trim_range} & \code{100.0} & trim points this many nats below the best; \code{None} disables \\
-  \code{min_train_points_after_trim} & \code{50} & floor that stops the trim on small training sets \\
+  \code{log_error_threshold} & \code{0.1} & $\varepsilon^\ast$ in nats, probability ratios accurate to about 10\%; tighten to 0.01--0.02 for tail quantities \\
+  \code{min_weight_efficiency} & \code{0.9} & floor on $\effw$ of \cref{eq:weight-efficiency}, a fraction in $[0, 1]$: at most about 10\% of the surrogate posterior may lie where the target is negligible. A converged surrogate gives $\effw \approx e^{-\varepsilon^2} \approx 0.99$ at $\varepsilon = 0.1$ \\
+  \code{posterior_shift_tolerance} & \code{None} & $\delta^\ast$ in posterior standard deviations, raised to the chains' noise floor where that is higher (\cref{eq:stability}); \code{None} does not test stability. Recommendation: 0.1, when the surrogate may still be improving between rounds \\
+  \code{train_log_prob_trim_range} & \code{100.0} & trim points this many nats below the best; \code{None} disables. Safe up to $d \approx 50$: the posterior mass lies about $d/2 \pm \sqrt{d/2}$ nats below the peak, so raise it to about $2d$ beyond that \\
+  \code{min_train_points_after_trim} & \code{'auto'} & the trim is skipped in a round where it would leave fewer points than this; \code{'auto'} is $10\,d$, what a Gaussian process needs, and at least the polynomial's $\binom{d+p}{p}$ coefficients for \code{surrogate='polynomial'}. \code{None} always trims, which can leave the fit with a handful of points if one evaluation lies far above the rest \\
   \code{max_train_points} & \code{None} & cap on the fit, by uniform random subsample \\
   \code{train_log_prob_floor} & \code{None} & absolute floor on training values \\
 \end{argtable}
 
+\needspace{8\baselineskip}  % keep the title with its table
 \subsubsection{Saving}
 \begin{argtable}
-  \code{save_posterior_samples} & \code{None} & draws of each round's posterior kept in \code{work_dir/posteriors} \\
-  \code{save_surrogate} & \code{None} & \code{'latest'} or \code{'all'} fitted surrogates in \code{work_dir/surrogates} \\
+  \code{save_posterior_samples} & \code{None} & draws of each round's posterior kept as \code{work_dir/posteriors/posterior_round{k}.npy} \\
+  \code{save_surrogate} & \code{None} & \code{'latest'} or \code{'all'} fitted surrogates, as \code{work_dir/surrogates/surrogate_round{k}.pkl} \\
   \code{restart_file} & \code{'hybrid_restart.pkl'} & name of the restart file in \code{work_dir} \\
   \code{expensive_mcmc_kwargs} & \code{None} & forwarded to the expensive \code{slurm_mcmc} runs \\
 \end{argtable}
