@@ -326,7 +326,7 @@ the nominal one, and judging them against it would make every expert look uninfo
 data.
 
 \begin{argtable}
-  \code{max_points_per_expert} & \code{None} & set this for large training sets: it grows the \emph{number} of experts with the data instead of the size of each, which keeps fitting affordable \\
+  \code{max_points_per_expert} & \code{None} & set this for large training sets: it grows the \emph{number} of experts with the data instead of the size of each, which keeps fitting affordable; with \code{'kmeans'} it is a hard cap (larger clusters are split), so experts average about half to two thirds of it \\
   \code{num_experts} & \code{8} & the number of experts, when \code{max_points_per_expert} is not set \\
   \code{min_points_per_expert} & \code{200} & below this many points per expert, fewer experts are used, down to one; an expert fitted on a few dozen points cannot identify its own kernel \\
   \code{partition} & \code{'kmeans'} & how points are split: \code{'kmeans'} (spatial clusters) or \code{'random'} \\
@@ -477,7 +477,7 @@ posterior-shift test (\code{posterior_shift_tolerance=None}), chains sized from 
 validation points per round (\code{'auto'}, $\max(200, 10\,d)$).
 
 \begin{keypoint}[Result]
-Converged in \textbf{4 rounds on 1\,580 expensive evaluations}, about 15 minutes --- 0.05\% of the
+Converged in \textbf{4 rounds on 1\,580 expensive evaluations}, about 13 minutes --- 0.05\% of the
 reference's evaluations. Two verifications were run; the first was rejected.
 \end{keypoint}
 
@@ -509,8 +509,8 @@ entered the fit; the two rows share one fit, so both are given on the first row 
   2  & 580    & 323 & 0.3004 & 0.899 & 0.651 & 410     & 10.9 & 69 \\
   3  & 780    & 523 & 0.0599 & 0.996 & 0.277 & 454     & 13.3 & 85 \\
   3v &        &     & 0.2725 & 0.914 & 0.279 & 30\,154 & 65.2 & 417 \\
-  4  & 1\,180 & 923 & 0.0152 & 1.000 & 0.200 & 5\,552  & 25.1 & 161 \\
-  4v &        &     & 0.0480 & 0.998 & 0.210 & 65\,670 & 57.2 & 366 \\
+  4  & 1\,180 & 923 & 0.0136 & 1.000 & 0.183 & 5\,552  & 26.2 & 168 \\
+  4v &        &     & 0.0264 & 0.999 & 0.212 & 52\,862 & 58.4 & 374 \\
   \bottomrule
 \end{tabular}
 \end{center}
@@ -528,9 +528,9 @@ entered the fit; the two rows share one fit, so both are given on the first row 
 Round 1 ($\varepsilon = 0.28$) is visibly wrong: too low in all three parameters, with means
 $(0.50, 0.47, 0.40)$ against the reference's $(0.80, 0.86, 1.12)$. From round 2 on the rounds follow
 the reference's shape. The arm at negative $x_0$ comes and goes: the mass at $x_0 < -0.5$ is 2.2,
-3.0, 0.1 and 2.5\% in rounds 1--4, against the reference's 2.1\%. What no round reaches is the other
+3.0, 0.1 and 2.8\% in rounds 1--4, against the reference's 2.1\%. What no round reaches is the other
 end of the banana, the upper tails of $x_1$ and $x_2$ where the valley climbs steeply: the 99.5th
-percentile of $x_1$ is at most 1.89, against the reference's 2.87. $\varepsilon$, being measured on
+percentile of $x_1$ is at most 1.90, against the reference's 2.87. $\varepsilon$, being measured on
 points drawn from the surrogate posterior, cannot see a region the chain never visits. The samples
 behind the figure are kept in \code{work_dir/posteriors/posterior_round{k}.npy} when
 \code{save_posterior_samples} is set; nothing else records them.
@@ -549,7 +549,7 @@ The two layers live in different spaces: the background is a \emph{slice} with t
 parameter pinned at the optimum, while the dots are a \emph{projection} of the full 3D posterior. A
 bright patch with no dots on it, such as the lobe near $x_0 = -1$, is therefore not by itself evidence
 of a missed mode. What does matter is visible in the top-left panel: the red draws follow the valley
-along the arm at negative $x_0$ down to about $-0.9$, so this run did find it, but at the other end
+along the arm at negative $x_0$ down to about $-0.7$, so this run did find it, but at the other end
 they stop near $x_1 \approx 1.9$, where the reference continues to about 2.9.
 
 \subsection{The posterior against the reference}
@@ -560,8 +560,8 @@ they stop near $x_1 \approx 1.9$, where the reference continues to about 2.9.
   \caption{The hybrid posterior (black) against the expensive reference (blue).}
 \end{figure}
 
-The centres agree to within 0.17 posterior widths, and the width in $x_0$ agrees too, 3\% narrower
-than the reference's. The widths in $x_1$ and $x_2$ do not: the hybrid is 17\% and 37\% too narrow
+The centres agree to within 0.16 posterior widths, and the width in $x_0$ agrees too, 3\% narrower
+than the reference's. The widths in $x_1$ and $x_2$ do not: the hybrid is 15\% and 35\% too narrow
 there, far outside the reference's own uncertainty ($\pm 2.4\%$ and $\pm 5.8\%$, batch means over ten
 blocks). The upper tails say why: $x_1 > 2$ and $x_2 > 4$ each hold $4.6\% \pm 0.6\%$ of the
 reference's mass and none of the hybrid's. The run never sampled that end of the banana, so it never
@@ -591,12 +591,12 @@ expensive refresh, and the round total.
 \begin{lstlisting}[style=plain, basicstyle={\ttfamily\fontsize{7.6}{9.2}\selectfont}]
 round n_expensive n_train w_log_err  w_eff post_shift shift_tol surr_iters  Lc/tau  ess/tau  t_fit_s t_mcmc_s
 -------------------------------------------------------------------------------------------------------------
-    1         380     123    0.2824  0.910        inf       off        360    10.5       67      2.3      2.4
-    2         580     323    0.3004  0.899      0.651       off        410    10.9       69      3.3      3.3
-    3         780     523    0.0599  0.996      0.277       off        454    13.3       85      7.6      4.3
-   3v                        0.2725  0.914      0.279       off      30154    65.2      417             236.2
-    4        1180     923    0.0152  1.000      0.200       off       5552    25.1      161     11.8     50.6
-   4v                        0.0480  0.998      0.210       off      65670    57.2      366             588.3
+    1         380     123    0.2824  0.910        inf       off        360    10.5       67      1.7      1.2
+    2         580     323    0.3004  0.899      0.651       off        410    10.9       69      2.6      1.5
+    3         780     523    0.0599  0.996      0.277       off        454    13.3       85     10.4      2.4
+   3v                        0.2725  0.914      0.279       off      30154    65.2      417             197.1
+    4        1180     923    0.0136  1.000      0.183       off       5552    26.2      168     10.3     48.2
+   4v                        0.0264  0.999      0.212       off      52862    58.4      374             478.5
 \end{lstlisting}
 
 Reading across a row:
@@ -615,8 +615,8 @@ Reading across a row:
         sampled: the length actually run, and what it bought in autocorrelation times and effective
         samples. A chain that keeps growing without clearing its floors shows it here.
   \item \code{t_fit_s} against \code{t_mcmc_s} is the pair worth watching. With experts of at
-        most 500 points the fit stays cheap, 2.3\,s on 123 points to 11.8\,s on 923; here it is the
-        sampling that dominates, 588.3\,s for the 65\,670 iterations of 4v. With a dense GP the
+        most 500 points the fit stays cheap, 1.7\,s on 123 points to about 10\,s on 523 and on 923; here it
+        is the sampling that dominates, 478.5\,s for the 52\,862 iterations of 4v. With a dense GP the
         balance tips the other way as the training set grows.
   \item A verified round prints two rows, $n$ and $n$v, and the columns they share ---
         \code{n_expensive}, \code{n_train}, \code{surrogate} and \code{t_fit_s} --- are left empty

@@ -1003,6 +1003,46 @@ def test_seeded_run_needs_no_init_points_and_resumes_without_them(work_dir):
     assert resumed['num_expensive_evals'] == 40
 
 
+def log_prob_gaussian_with_offset(x, offset):
+    return log_prob_gaussian(x) + offset
+
+
+def test_non_finite_coordinates_in_user_points_are_an_error():
+    """A NaN or inf coordinate is most likely a mistake in the input, so it is not silently
+    dropped; a NaN value, by contrast, is a failed evaluation and is still filtered."""
+    points = np.random.default_rng(0).uniform(-2, 2, (5, 2))
+    values = np.array([log_prob_gaussian(x) for x in points])
+    bad_points = points.copy()
+    bad_points[3, 1] = np.nan
+    with pytest.raises(ValueError, match=r'init_points has non-finite coordinates .* rows \[3\]'):
+        HybridMCMCRunner(HybridMCMCConfig(log_prob_fun=log_prob_gaussian, init_points=bad_points,
+                                          num_expensive_iters=2))
+    bad_points[3, 1] = np.inf
+    with pytest.raises(ValueError, match='initial_train_points has non-finite coordinates'):
+        HybridMCMCRunner(HybridMCMCConfig(log_prob_fun=log_prob_gaussian,
+                                          initial_train_points=bad_points,
+                                          initial_train_values=values))
+    values[3] = np.nan
+    HybridMCMCRunner(HybridMCMCConfig(log_prob_fun=log_prob_gaussian, initial_train_points=points,
+                                      initial_train_values=values))
+
+
+def test_extra_arg_is_saved_in_the_run_dir_except_with_local_map(work_dir):
+    """The run documents its full input in work_dir, not only inside an expensive-MCMC stage
+    (where keep_run_dirs may be the only copy left); local-map writes no files."""
+    settings = dict(log_prob_fun=log_prob_gaussian_with_offset, extra_arg=3.0,
+                    init_points=np.random.default_rng(0).normal(size=(6, 2)),
+                    num_expensive_iters=1, num_regularization_points=0, num_validation_points=6,
+                    num_surrogate_iters=200, log_error_threshold=1e-9,
+                    posterior_shift_tolerance=None, surrogate='polynomial', polynomial_degree=2,
+                    num_rounds_max=1, verbosity=0, random_seed=1)
+    slurm_mcmc_hybrid(cluster='local', work_dir='local', **settings)
+    with open(os.path.join('local', 'extra_arg.pkl'), 'rb') as f:
+        assert pickle.load(f) == 3.0
+    slurm_mcmc_hybrid(cluster='local-map', work_dir='local_map', **settings)
+    assert not os.path.exists(os.path.join('local_map', 'extra_arg.pkl'))
+
+
 def test_init_points_is_required_whenever_something_uses_it():
     from slurmcmc.hybrid import HybridMCMCConfig, HybridMCMCRunner
     points = np.zeros((5, 2))
@@ -1411,6 +1451,36 @@ def test_a_chain_whose_tau_grows_with_it_stops_after_stalled_extensions(work_dir
     assert 'chain-depth' in result['blocking_criteria_per_round'][-1]
     assert verified['surrogate_iters'] < 1_000_000
     assert any('did not rise' in r.getMessage() for r in caplog.records)
+
+
+def test_a_frozen_chain_is_reported_and_not_extended(work_dir, caplog, monkeypatch):
+    """
+    A walker that never moves has no autocorrelation time (emcee returns NaN): the chain must
+    stop with a warning that it froze, not crash converting NaN into a chain length.
+    """
+    import logging
+    from slurmcmc import hybrid
+
+    def spikes_at_the_start(self, coords):
+        # finite only where the walkers start, so every proposal lands at -inf and is rejected
+        coords = np.atleast_2d(coords)
+        if not hasattr(self, '_spikes'):
+            self._spikes = coords.copy()
+        on_spike = np.any(np.all(coords[:, None, :] == self._spikes[None, :, :], axis=2), axis=1)
+        return np.where(on_spike, 0.0, -np.inf)
+
+    monkeypatch.setattr(hybrid.HybridMCMCRunner, '_surrogate_log_prob_batch', spikes_at_the_start)
+    np.random.seed(0)
+    settings = _restart_settings(work_dir, log_error_threshold=1e3, posterior_shift_tolerance=None,
+                                 num_rounds_max=1, verbosity=2)
+    settings.pop('num_surrogate_iters')
+    with caplog.at_level(logging.INFO):
+        result = hybrid.slurm_mcmc_hybrid(**settings)
+    frozen_warnings = [r.getMessage() for r in caplog.records if 'chain froze' in r.getMessage()]
+    assert frozen_warnings and all('extended' in message for message in frozen_warnings)
+    assert not any('extended the surrogate chain' in r.getMessage() for r in caplog.records)
+    assert not result['converged']
+    assert all(np.isnan(r['surrogate_tau']) for r in result['round_records'])
 
 
 def test_a_verification_chain_is_sized_from_the_largest_tau_of_the_run():

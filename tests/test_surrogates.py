@@ -124,6 +124,33 @@ def test_rbcm_expert_count_follows_max_points_per_expert():
     assert len(fixed._assign(_rbcm_training_set(n=4000)[0])) == 4
 
 
+def test_rbcm_max_points_per_expert_caps_every_kmeans_expert():
+    """
+    k-means balances distances, not sizes. MCMC training data is packed into the posterior bulk
+    with a sparse halo of early exploration, so a cluster in the bulk can take several times its
+    share: measured on a 7D Student-t run, one expert got 4799 points at a nominal 1000. An
+    expert's fit grows as its size cubed, and a Slurm fit waits for the slowest one, so the cap
+    must hold for every expert.
+    """
+    from slurmcmc.hybrid import DistributedGPSurrogate
+    rng = np.random.default_rng(0)
+    X = np.vstack([rng.normal(0, 0.05, (1800, 3)), rng.uniform(-5, 5, (200, 3))])
+    surrogate = DistributedGPSurrogate(max_points_per_expert=200, min_points_per_expert=50)
+    uncapped = surrogate._kmeans_groups(X, np.arange(len(X)), 10, min_size=5)
+    assert max(map(len, uncapped)) > 400, 'the test data no longer makes k-means unbalanced'
+
+    groups = surrogate._assign(X)
+    assert max(map(len, groups)) <= 200
+    assigned = np.concatenate(groups)
+    assert sorted(assigned.tolist()) == list(range(len(X))), 'a training point was dropped'
+
+    # repeated points defeat k-means; they are sliced instead
+    duplicates = np.vstack([np.zeros((700, 3)), rng.normal(0, 1, (100, 3))])
+    groups = surrogate._assign(duplicates)
+    assert max(map(len, groups)) <= 200
+    assert sorted(np.concatenate(groups).tolist()) == list(range(len(duplicates)))
+
+
 def test_rbcm_will_not_split_below_min_points_per_expert():
     """
     An expert fitted on a handful of points cannot identify its own ARD kernel: it learns a

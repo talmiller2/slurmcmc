@@ -176,7 +176,7 @@ to disk as it goes, in \code{points_history.txt} and \code{values_history.txt} (
 
 A calibration can run for days, and jobs get killed. With \code{save_restart=True} the complete
 state of a run --- optimizer or sampler, evaluation history, iteration counter --- is written to
-\code{work_dir/restart_file} after every \code{restart_save_interval} iterations. The write is
+\code{work_dir/restart_file} after every \code{restart_save_interval} iterations, and after the last one. The write is
 atomic: the file is written under a temporary name and then renamed, so a job killed mid-save
 leaves the previous restart file intact.
 

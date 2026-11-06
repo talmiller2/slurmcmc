@@ -343,7 +343,10 @@ class Minimizer:
 
             self._status = self._build_status(curr_iter)
 
-            if cfg.save_restart and np.mod(curr_iter, cfg.restart_save_interval) == 0:
+            # the last iteration is always saved, or the restart file would lag the run by up
+            # to restart_save_interval - 1 iterations whose evaluations were already paid for
+            is_last_iter = curr_iter == self.ini_iter + cfg.num_iters - 1
+            if cfg.save_restart and (np.mod(curr_iter, cfg.restart_save_interval) == 0 or is_last_iter):
                 if cfg.verbosity >= 3:
                     logging.info('    saving restart file: ' + cfg.work_dir + '/' + cfg.restart_file)
                 save_restart_file({**self._status, 'random_state': get_random_state()},

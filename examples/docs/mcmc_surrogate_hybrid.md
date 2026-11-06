@@ -181,7 +181,7 @@ sampling becomes the larger cost: measure it against the dense GP on your target
 
 | argument | default | notes |
 |---|---|---|
-| `max_points_per_expert` | `None` | **Set this** (500 is a good default): the number of experts then grows with the data. |
+| `max_points_per_expert` | `None` | **Set this** (500 is a good default): the number of experts then grows with the data. With `'kmeans'` no expert exceeds it (larger clusters are split), so experts average about half to two thirds of it. |
 | `num_experts` | `8` | Used only without `max_points_per_expert`. |
 | `min_points_per_expert` | `200` | Fewer points per expert falls back to fewer experts, down to the dense GP. |
 | `partition` | `'kmeans'` | `'kmeans'` or `'random'`. |

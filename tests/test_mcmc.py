@@ -124,6 +124,31 @@ def test_slurm_mcmc_with_restart_file(work_dir, verbosity, seed):
     assert restart_2['ini_iter'] == 2 * num_iters
 
 
+def test_slurm_mcmc_restart_file_includes_the_last_iteration(work_dir, verbosity, seed):
+    """
+    With restart_save_interval > 1 the restart file used to be written only on multiples of it,
+    so a run of 7 iterations with an interval of 5 left a file 1 iteration behind, and the
+    evaluations of the missing iterations had to be paid for again on resuming.
+    """
+    num_walkers = 6
+    num_iters = 7
+    init_points = np.array([1, 1]) + 0.5 * np.random.randn(num_walkers, 2)
+    kwargs = dict(log_prob_fun=log_prob_fun, init_points=init_points, num_iters=num_iters,
+                  verbosity=verbosity, slurm_verbosity=verbosity, cluster='local-map',
+                  work_dir=work_dir, save_restart=True, restart_save_interval=5)
+
+    slurm_mcmc(**kwargs, load_restart=False)
+    restart = load_restart_file(work_dir, restart_file='mcmc_restart.pkl')
+    assert restart['ini_iter'] == num_iters
+    assert restart['sampler'].iteration == num_iters
+
+    # a resumed run counts iterations from where it left off, and also ends on a save
+    slurm_mcmc(**kwargs, load_restart=True)
+    restart = load_restart_file(work_dir, restart_file='mcmc_restart.pkl')
+    assert restart['ini_iter'] == 2 * num_iters
+    assert restart['slurm_pool'].num_calls == 1 + 2 * 2 * num_iters
+
+
 def test_slurm_mcmc_with_status_restart(work_dir, verbosity, seed):
     num_params = 2
     num_walkers = 10

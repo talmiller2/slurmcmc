@@ -243,7 +243,8 @@ class DistributedGPSurrogate(_DetrendedSurrogateBase):
         self.work_dir = work_dir
         self.job_name = job_name
         self.submitit_kwargs = submitit_kwargs
-        # grows the number of experts with the data instead of the size of each
+        # grows the number of experts with the data instead of the size of each; with k-means it
+        # is a hard cap, so experts average about half to two thirds of it
         self.max_points_per_expert = max_points_per_expert
         # an expert on too few points cannot identify its own kernel; below this floor fewer
         # experts are used, down to one, which is exactly GaussianProcessSurrogate
@@ -267,19 +268,48 @@ class DistributedGPSurrogate(_DetrendedSurrogateBase):
         if num_experts == 1:
             return [np.arange(len(X_fit))]
         if self.partition == 'kmeans':
-            from sklearn.cluster import KMeans
-            kmeans = KMeans(n_clusters=num_experts, n_init=1,
-                            random_state=self.random_state).fit(X_fit)
-            labels = kmeans.labels_
-            groups = [np.where(labels == k)[0] for k in range(num_experts)]
-            return self._absorb_stragglers(groups, X_fit, kmeans.cluster_centers_)
+            groups = self._kmeans_groups(X_fit, np.arange(len(X_fit)), num_experts, min_size=5)
+            if self.max_points_per_expert:
+                # k-means balances distances, not sizes: on MCMC data, packed into the posterior
+                # bulk, one cluster can take several times its share, and an expert's fit grows as
+                # its size cubed. Below min_points_per_expert the floor wins, as in the count above.
+                cap = max(self.max_points_per_expert, self.min_points_per_expert)
+                groups = [piece for g in groups for piece in self._split_to_cap(X_fit, g, cap)]
+            return groups
         order = rng.permutation(len(X_fit))
         return [g for g in np.array_split(order, num_experts) if len(g) >= 5]
 
+    def _kmeans_groups(self, X_fit, indices, num_clusters: int, min_size: int) -> List:
+        """k-means of the points X_fit[indices], as arrays of indices into X_fit."""
+        from sklearn.cluster import KMeans
+        kmeans = KMeans(n_clusters=num_clusters, n_init=1,
+                        random_state=self.random_state).fit(X_fit[indices])
+        groups = [np.where(kmeans.labels_ == k)[0] for k in range(num_clusters)]
+        groups = self._absorb_stragglers(groups, X_fit[indices], kmeans.cluster_centers_,
+                                         min_size=min_size)
+        return [indices[g] for g in groups]
+
+    def _split_to_cap(self, X_fit, indices, cap: int) -> List:
+        """Split a group larger than cap into ceil(n / cap) k-means clusters, recursively."""
+        if len(indices) <= cap:
+            return [indices]
+        num_pieces = int(np.ceil(len(indices) / cap))
+        # pieces too small to identify a kernel join their nearest sibling, which may then
+        # need splitting again
+        min_size = min(self.min_points_per_expert, cap // 2)
+        pieces = self._kmeans_groups(X_fit, indices, num_pieces, min_size=min_size)
+        if max(len(p) for p in pieces) == len(indices):
+            # k-means cannot divide it (e.g. repeated points): equal slices along its longest axis
+            X_group = X_fit[indices]
+            axis = np.argmax(np.ptp(X_group, axis=0))
+            order = indices[np.argsort(X_group[:, axis], kind='stable')]
+            return list(np.array_split(order, num_pieces))
+        return [sub for p in pieces for sub in self._split_to_cap(X_fit, p, cap)]
+
     @staticmethod
-    def _absorb_stragglers(groups: List, X_fit, centers) -> List:
+    def _absorb_stragglers(groups: List, X_fit, centers, min_size: int = 5) -> List:
         """Hand the points of clusters too small to fit to the nearest surviving expert."""
-        keep = [k for k, g in enumerate(groups) if len(g) >= 5]
+        keep = [k for k, g in enumerate(groups) if len(g) >= min_size]
         if len(keep) == len(groups):
             return groups
         if not keep:

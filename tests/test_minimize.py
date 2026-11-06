@@ -255,6 +255,18 @@ def test_slurm_minimize_2params_with_restart(work_dir, verbosity, seed, loss_fun
     assert res_2['ini_iter'] == 2 * num_iters
 
 
+def test_slurm_minimize_restart_file_includes_the_last_iteration(work_dir, verbosity, seed, loss_fun):
+    """The last iteration is saved even when it is not a multiple of restart_save_interval."""
+    from slurmcmc.general_utils import load_restart_file
+    num_iters = 7
+    slurm_minimize(loss_fun=loss_fun, param_bounds=[[-5, 5], [-5, 5]], num_workers=5,
+                   num_iters=num_iters, cluster='local-map', verbosity=verbosity,
+                   work_dir=work_dir, save_restart=True, restart_save_interval=5)
+    restart = load_restart_file(work_dir, restart_file='opt_restart.pkl')
+    assert restart['ini_iter'] == num_iters
+    assert restart['slurm_pool'].num_calls == num_iters
+
+
 def test_slurm_minimize_2params_with_log_file(work_dir, verbosity, seed, loss_fun):
     num_params = 2
     param_bounds = [[-5, 5] for _ in range(num_params)]

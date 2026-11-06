@@ -58,7 +58,7 @@ from slurmcmc.surrogates import (DistributedGPSurrogate, GaussianProcessSurrogat
                                  _lbfgs_with_more_iterations)
 from slurmcmc.general_utils import (set_logging, combine_args, point_to_tuple, signal_handler,
                                     save_restart_file, load_restart_file, seed_random_generators,
-                                    get_random_state, set_random_state)
+                                    get_random_state, set_random_state, save_extra_arg_to_file)
 from slurmcmc.import_utils import deferred_import_function_wrapper
 from slurmcmc.mcmc import slurm_mcmc
 from slurmcmc.slurm_utils import Cluster, KeepRunDirs, SlurmPool, submit_remote_run
@@ -287,6 +287,19 @@ class HybridMCMCRunner:
             logging.error(err_msg)
             raise ValueError(err_msg)
         self._num_params = next(iter(dims.values()))
+        # a non-finite coordinate is not a point at all, most likely a mistake in the input
+        for name in ('init_points', 'initial_train_points'):
+            points = getattr(config, name)
+            if points is None:
+                continue
+            finite = np.all(np.isfinite(np.atleast_2d(np.asarray(points, dtype=float))), axis=1)
+            if not np.all(finite):
+                bad_rows = np.flatnonzero(~finite)
+                err_msg = (f'{name} has non-finite coordinates (NaN or inf) in {len(bad_rows)} '
+                           f'row(s), e.g. rows {bad_rows[:5].tolist()}: every parameter of a point '
+                           f'must be a number.')
+                logging.error(err_msg)
+                raise ValueError(err_msg)
         # confinement geometry, refreshed from the training set at each fit (unbounded mode only)
         self._confinement: Optional[Dict[str, Any]] = None
         self._filter_stats: Optional[Dict[str, int]] = None
@@ -306,6 +319,7 @@ class HybridMCMCRunner:
         self._last_surrogate_tau: float = float('nan')
         self._max_surrogate_tau: float = float('nan')       # the largest tau measured in the run
         self._last_surrogate_sufficient: bool = True        # whether the last chain met its floors
+        self._last_surrogate_frozen: bool = False           # whether a walker of it stopped moving
         self._last_surrogate_chain_ess: float = float('nan')
         self.num_fit_points_per_round: List[int] = []
         self._resumed: bool = False
@@ -890,8 +904,10 @@ class HybridMCMCRunner:
         try:
             chain = sampler.get_chain(discard=self._chain_burnin(num_iters))
             # tol=0 skips emcee's own check that the chain is >= 50 tau, which would log a warning
-            # for every refinement chain (short by design); the L_c/tau floors are checked here
-            return float(np.max(emcee.autocorr.integrated_time(chain, tol=0, quiet=True)))
+            # for every refinement chain (short by design); the L_c/tau floors are checked here.
+            # A walker that never moved divides 0 by 0: the NaN is the frozen chain's signal
+            with np.errstate(invalid='ignore'):
+                return float(np.max(emcee.autocorr.integrated_time(chain, tol=0, quiet=True)))
         except Exception:
             return float(num_iters) / 10.0
 
@@ -932,8 +948,9 @@ class HybridMCMCRunner:
         verification chain takes the largest tau of the run instead: the refinement chain before it
         is too short to measure tau well, and tau measured on a short chain is biased low.
         """
-        tau = np.nanmax([self._last_surrogate_tau, self._max_surrogate_tau]) if final \
-            else self._last_surrogate_tau
+        measured = [self._last_surrogate_tau, self._max_surrogate_tau] if final \
+            else [self._last_surrogate_tau]
+        tau = max((t for t in measured if np.isfinite(t)), default=float('nan'))
         if np.isfinite(tau) and tau > 0:
             return float(tau)
         return _NOMINAL_TAU_PER_PARAM * self._num_params
@@ -976,9 +993,13 @@ class HybridMCMCRunner:
             state = sampler.run_mcmc(initial_state=init_walkers, nsteps=num_iters,
                                      skip_initial_state_check=True)
         sufficient, tau, ess = self._chain_is_sufficient(sampler, num_iters, final)
+        # a walker that never moves after burn-in has no autocorrelation time, and emcee returns
+        # NaN for it; extending such a chain would only repeat it
+        frozen = not np.isfinite(tau)
         best_iters_per_tau = num_iters / max(tau, 1.0)
         stalled = 0
-        while not sufficient and num_iters < max_iters and stalled < _STALLED_EXTENSIONS:
+        while (not sufficient and not frozen and num_iters < max_iters
+               and stalled < _STALLED_EXTENSIONS):
             # to the length the floors need at the tau just measured, and at least 25% further,
             # so that a need met only by rounding still makes progress
             target = max(int(np.ceil(_SIZING_MARGIN * self._iters_needed(tau, nwalkers, final))),
@@ -989,6 +1010,9 @@ class HybridMCMCRunner:
                                          skip_initial_state_check=True)
             num_iters += extra
             sufficient, tau, ess = self._chain_is_sufficient(sampler, num_iters, final)
+            frozen = not np.isfinite(tau)
+            if frozen:
+                break
             iters_per_tau = num_iters / max(tau, 1.0)
             stalled = 0 if iters_per_tau > best_iters_per_tau else stalled + 1
             best_iters_per_tau = max(best_iters_per_tau, iters_per_tau)
@@ -996,14 +1020,31 @@ class HybridMCMCRunner:
                 logging.info(f'    extended the surrogate chain to {num_iters} iterations '
                              f'(ESS {ess:.0f}, L_c/tau {iters_per_tau:.0f})')
         self._last_surrogate_iters = num_iters
-        self._last_surrogate_tau = tau
-        self._max_surrogate_tau = float(np.nanmax([self._max_surrogate_tau, tau]))
+        self._last_surrogate_frozen = frozen
+        if frozen:
+            # no tau was measured, so the next chain is still sized from the last one that was
+            # (as a resume would); the samples count as if the chain were one autocorrelation time
+            sufficient = False
+            ess = len(self._burnin_samples(sampler, num_iters)) / num_iters
+        else:
+            self._last_surrogate_tau = tau
+            self._max_surrogate_tau = float(np.nanmax([self._max_surrogate_tau, tau]))
         self._last_surrogate_chain_ess = ess
         self._last_surrogate_sufficient = sufficient
 
+        if cfg.verbosity >= 1 and frozen:
+            chain = sampler.get_chain(discard=self._chain_burnin(num_iters))
+            num_stuck = int(np.sum(np.any(np.ptp(chain, axis=0) == 0, axis=1)))
+            logging.warning(
+                f'    the {"verification" if final else "refinement"} chain froze: at {num_iters} '
+                f'iterations, {num_stuck} of {nwalkers} walkers did not move in at least one '
+                f'parameter after burn-in (mean acceptance fraction '
+                f'{np.mean(sampler.acceptance_fraction):.3f}), so its autocorrelation time is '
+                f'undefined. The chain is not extended and counts as short of its floors.'
+                + (' This verification is therefore not accepted.' if final else ''))
         # stopping short of a floor must not pass silently: fewer effective samples raise the
         # stability test's noise floor, which makes it easier to pass, not harder
-        if cfg.verbosity >= 1 and not sufficient:
+        elif cfg.verbosity >= 1 and not sufficient:
             ess_floor, iters_per_tau_floor = self._ess_floor(final), self._iters_per_tau_floor(final)
             why = (f'reached max_surrogate_iters = {cfg.max_surrogate_iters}' if num_iters >= max_iters
                    else f'stopped: over its last {_STALLED_EXTENSIONS} extensions L_c/tau did not '
@@ -1018,6 +1059,16 @@ class HybridMCMCRunner:
                    'verify_surrogate_ess deliberately if this depth is out of reach for the target.'
                    if final else ''))
         return sampler, state
+
+    def _last_chain_tau_and_ess(self, samples: np.ndarray) -> Tuple[float, float]:
+        """tau and ESS of the chain just run, as the round records them. A frozen chain has no tau
+        (NaN), and its ESS is the one _run_surrogate_mcmc assigned it."""
+        if self._last_surrogate_frozen:
+            return float('nan'), self._last_surrogate_chain_ess
+        tau = self._last_surrogate_tau   # computed once by the extension loop
+        if not np.isfinite(tau) or tau <= 0:
+            tau = float(self._last_surrogate_iters) / 10.0
+        return tau, len(samples) / max(tau, 1.0)
 
     def _burnin_samples(self, sampler: emcee.EnsembleSampler, num_iters: int) -> np.ndarray:
         """Post burn-in flat samples. The sampler holds this round only, so nothing else to skip."""
@@ -1380,6 +1431,10 @@ class HybridMCMCRunner:
         set_logging(cfg.work_dir, cfg.log_file)
         if cfg.install_signal_handler:
             signal.signal(signal.SIGTERM, signal_handler)
+        # documents the full input of the run; local-map writes no files, as in slurm_mcmc
+        if cfg.cluster != 'local-map':
+            os.makedirs(cfg.work_dir, exist_ok=True)
+            save_extra_arg_to_file(cfg.work_dir, cfg.extra_arg)
 
         t_start_total = time.time()
         # seeded in this process, so remote runs too; a resume then restores the saved state
@@ -1511,10 +1566,7 @@ class HybridMCMCRunner:
 
             # validation: expensive evaluations on held-out surrogate-posterior samples
             t_start = time.time()
-            tau_samples = self._last_surrogate_tau   # computed once by the extension loop
-            if not np.isfinite(tau_samples) or tau_samples <= 0:
-                tau_samples = float(self._last_surrogate_iters) / 10.0
-            num_effective_samples = len(samples) / max(tau_samples, 1.0)
+            tau_samples, num_effective_samples = self._last_chain_tau_and_ess(samples)
             scored = self._validate_posterior(samples, samples_previous_round,
                                               num_effective_samples, ess_previous_round,
                                               f'round{ind_round}_validation')
@@ -1608,10 +1660,7 @@ class HybridMCMCRunner:
                 init_walkers = state.coords
                 samples = self._burnin_samples(sampler, self._last_surrogate_iters)
                 time_surrogate_mcmc += time.time() - t_start
-                tau_samples = self._last_surrogate_tau
-                if not np.isfinite(tau_samples) or tau_samples <= 0:
-                    tau_samples = float(self._last_surrogate_iters) / 10.0
-                num_effective_samples = len(samples) / max(tau_samples, 1.0)
+                tau_samples, num_effective_samples = self._last_chain_tau_and_ess(samples)
 
                 t_start = time.time()
                 scored = self._validate_posterior(samples, samples_previous_round,
