@@ -24,7 +24,7 @@ constant. A run converges when
     weight_efficiency = (sum w)^2 / (N_val sum w^2) >= min_weight_efficiency,
     posterior shift <= max(posterior_shift_tolerance, noise floor)   (when enabled).
 
-weight_efficiency is the importance-sampling (Kish) efficiency of the validation weights, in
+weight_efficiency is the importance-sampling efficiency of the validation weights, in
 (0, 1]. If a fraction s of the surrogate posterior lies where the true posterior is negligible,
 it is ~ 1 - s: the weighted error cannot see such regions, since their weight is ~0, so this
 is the criterion that bounds the junk fraction of the reported samples. It also catches a few
@@ -1142,7 +1142,7 @@ class HybridMCMCRunner:
             w_sum = float(len(d))
         w_norm = w / w_sum
 
-        # the fraction of the batch that effectively carries the weight (Kish efficiency)
+        # the fraction of the batch that effectively carries the weight
         effective_count = float(1.0 / np.sum(w_norm ** 2))
 
         # posterior-weighted RMS error about the weighted mean, in nats

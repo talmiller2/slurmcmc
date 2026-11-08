@@ -1,0 +1,98 @@
+% Bibliography: cited with natbib, \citep{key} for (Author, year) and \citet{key} for Author (year).
+% Each title links to the paper; the line below it gives the DOI or URL.
+
+\cleardoublepage
+\phantomsection
+\addcontentsline{toc}{chapter}{\bibname}
+\markboth{\bibname}{}
+\begin{thebibliography}{99}
+\setlength{\itemsep}{3pt}
+\newcommand{\doilink}[1]{\newblock \href{https://doi.org/#1}{\nolinkurl{doi:#1}}}
+\newcommand{\urllink}[1]{\newblock \url{#1}}
+
+% ---------------------------------------------------------------- Markov chain Monte Carlo
+\bibitem[Foreman-Mackey et~al.(2013)]{foreman2013}
+D.~Foreman-Mackey, D.~W. Hogg, D.~Lang, and J.~Goodman.
+\newblock \href{https://doi.org/10.1086/670067}{emcee: The MCMC hammer}.
+\newblock \emph{Publications of the Astronomical Society of the Pacific}, 125(925):306--312, 2013.
+\doilink{10.1086/670067}
+
+\bibitem[Gelman and Rubin(1992)]{gelman1992}
+A.~Gelman and D.~B. Rubin.
+\newblock \href{https://doi.org/10.1214/ss/1177011136}{Inference from iterative simulation using
+  multiple sequences}.
+\newblock \emph{Statistical Science}, 7(4):457--472, 1992.
+\doilink{10.1214/ss/1177011136}
+
+\bibitem[Goodman and Weare(2010)]{goodman2010}
+J.~Goodman and J.~Weare.
+\newblock \href{https://doi.org/10.2140/camcos.2010.5.65}{Ensemble samplers with affine invariance}.
+\newblock \emph{Communications in Applied Mathematics and Computational Science}, 5(1):65--80, 2010.
+\doilink{10.2140/camcos.2010.5.65}
+
+\bibitem[Hastings(1970)]{hastings1970}
+W.~K. Hastings.
+\newblock \href{https://doi.org/10.1093/biomet/57.1.97}{Monte Carlo sampling methods using Markov
+  chains and their applications}.
+\newblock \emph{Biometrika}, 57(1):97--109, 1970.
+\doilink{10.1093/biomet/57.1.97}
+
+\bibitem[Hogg and Foreman-Mackey(2018)]{hogg2018}
+D.~W. Hogg and D.~Foreman-Mackey.
+\newblock \href{https://doi.org/10.3847/1538-4365/aab76e}{Data analysis recipes: Using Markov chain
+  Monte Carlo}.
+\newblock \emph{The Astrophysical Journal Supplement Series}, 236(1):11, 2018.
+\doilink{10.3847/1538-4365/aab76e}
+
+\bibitem[Metropolis et~al.(1953)]{metropolis1953}
+N.~Metropolis, A.~W. Rosenbluth, M.~N. Rosenbluth, A.~H. Teller, and E.~Teller.
+\newblock \href{https://doi.org/10.1063/1.1699114}{Equation of state calculations by fast computing
+  machines}.
+\newblock \emph{The Journal of Chemical Physics}, 21(6):1087--1092, 1953.
+\doilink{10.1063/1.1699114}
+
+\bibitem[Sokal(1997)]{sokal1997}
+A.~D. Sokal.
+\newblock \href{https://doi.org/10.1007/978-1-4899-0319-8_6}{Monte Carlo methods in statistical
+  mechanics: Foundations and new algorithms}.
+\newblock In C.~DeWitt-Morette, P.~Cartier, and A.~Folacci, editors, \emph{Functional
+  Integration: Basics and Applications}, volume 361 of \emph{NATO ASI Series B}, pages 131--192.
+  Springer, 1997.
+\doilink{10.1007/978-1-4899-0319-8_6}
+
+% ---------------------------------------------------------------- Gaussian processes
+\bibitem[Cao and Fleet(2014)]{cao2014}
+Y.~Cao and D.~J. Fleet.
+\newblock \href{https://arxiv.org/abs/1410.7827}{Generalized product of experts for automatic and
+  principled fusion of Gaussian process predictions}.
+\newblock arXiv:1410.7827, 2014.
+\urllink{https://arxiv.org/abs/1410.7827}
+
+\bibitem[Deisenroth and Ng(2015)]{deisenroth2015}
+M.~P. Deisenroth and J.~W. Ng.
+\newblock \href{https://proceedings.mlr.press/v37/deisenroth15.html}{Distributed Gaussian processes}.
+\newblock In \emph{Proceedings of the 32nd International Conference on Machine Learning}, volume~37
+  of \emph{Proceedings of Machine Learning Research}, pages 1481--1490, 2015.
+\urllink{https://proceedings.mlr.press/v37/deisenroth15.html}
+
+\bibitem[Rasmussen and Williams(2006)]{rasmussen2006}
+C.~E. Rasmussen and C.~K.~I. Williams.
+\newblock \href{https://gaussianprocess.org/gpml/}{\emph{Gaussian Processes for Machine Learning}}.
+\newblock MIT Press, 2006.
+\urllink{https://gaussianprocess.org/gpml/}
+
+\bibitem[Tresp(2000)]{tresp2000}
+V.~Tresp.
+\newblock \href{https://doi.org/10.1162/089976600300014908}{A Bayesian committee machine}.
+\newblock \emph{Neural Computation}, 12(11):2719--2741, 2000.
+\doilink{10.1162/089976600300014908}
+
+% ---------------------------------------------------------------- software
+\bibitem[Balandat et~al.(2020)]{balandat2020}
+M.~Balandat, B.~Karrer, D.~R. Jiang, S.~Daulton, B.~Letham, A.~G. Wilson, and E.~Bakshy.
+\newblock \href{https://arxiv.org/abs/1910.06403}{BoTorch: A framework for efficient Monte-Carlo
+  Bayesian optimization}.
+\newblock In \emph{Advances in Neural Information Processing Systems}, volume~33, 2020.
+\urllink{https://arxiv.org/abs/1910.06403}
+
+\end{thebibliography}

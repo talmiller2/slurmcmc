@@ -26,14 +26,18 @@ Requires the `hybrid` extra: `pip install -e ".[hybrid]"` (scikit-learn).
                               initial_train_values=pool.values_history[:, 0])
    ```
 2. **Fit** a surrogate: a Gaussian process by default.
-3. **Sample** it with a cheap MCMC (no cluster). This chain is kept short, because its posterior
-   is thrown away at the next fit.
+3. **Sample** it: a surrogate-based MCMC (cheap, no cluster) at *refining* depth. This chain is kept
+   short, because its posterior is thrown away at the next fit.
 4. **Validate.** Evaluate the expensive function on `num_validation_points` drawn from the
    surrogate posterior, and score the criteria below.
 5. **Refine.** If they fail, the validation points join the training set and the loop repeats.
-6. **Verify.** A pass is only provisional: the same surrogate is re-sampled to reporting depth and
-   scored on one more validation batch. If it still passes, that posterior is returned; otherwise
-   refinement resumes. No evaluation is wasted: every batch joins the training set.
+6. **Verify.** A pass is only provisional: a long surrogate-based MCMC at *reporting* depth is run
+   on the same surrogate and validated again on one more batch. If it still passes, that posterior is
+   returned; otherwise refinement resumes. No evaluation is wasted: every batch joins the training set.
+
+Verification is not a different test: it is a second validation of the same surrogate, on a deeper
+chain. *Refining* and *verifying* name the two chain depths, and they are what the `refine_*` and
+`verify_*` arguments set.
 
 ### What is measured
 
@@ -48,6 +52,26 @@ and importance weights $w_i = e^{d_i}$:
 - **Posterior shift** $\delta$: the largest change of a parameter's mean or width since the previous
   round, in posterior standard deviations. Tested only when `posterior_shift_tolerance` is set (off
   by default), and never below the sampling noise floor of two finite chains.
+
+**What each criterion sees.** The two average over different distributions. In $\varepsilon$ each
+point carries the weight $p_\mathrm{exp}/p_\mathrm{sur}$, and the points were drawn with density
+$\propto p_\mathrm{sur}$, so the surrogate density cancels: $\varepsilon$ is measured under the
+*expensive* posterior. $\eta_w$ divides by the plain count $N$, so it is measured under the
+*surrogate* posterior. Put together:
+
+- $\varepsilon$ asks: where the true posterior has mass, does the surrogate get the shape right?
+- $\eta_w$ asks: where the surrogate has mass, is the true posterior there too?
+
+[example_hybrid_criteria_cases.py](../example_hybrid_criteria_cases.py) shows this on four 1D
+surrogates of a standard normal target, with $N = 200$ validation points each:
+
+<img src="pics/example_hybrid_criteria_cases.png" alt="the two criteria on four 1D surrogates" width="700" height="auto">
+
+An accurate surrogate passes both. A noisy one, in the right place but with its shape off by about
+0.3 nats, fails $\varepsilon$ and passes $\eta_w$. A surrogate with a spurious lobe holding 20% of
+its mass passes $\varepsilon$, because the lobe's points carry weights below $10^{-6}$ and drop out of
+it, but fails $\eta_w$, which still counts them. A misplaced peak fails both, with the weight
+collapsed onto about two points.
 
 **What the test cannot see.** Everything is measured on points drawn from the *surrogate*
 posterior, so it detects a posterior that is too broad, but not one that is too narrow: mass the

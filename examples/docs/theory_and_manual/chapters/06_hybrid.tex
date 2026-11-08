@@ -12,11 +12,11 @@ evaluation it makes along the way.
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}[
-      font=\small, node distance=5mm and 9mm,
+      font=\small, node distance=3.5mm and 9mm,
       box/.style={draw=accent, fill=accentsoft, rounded corners=2pt, align=center,
-                  minimum width=44mm, minimum height=9mm, inner sep=4pt},
+                  minimum width=50mm, minimum height=7mm, inner sep=3pt},
       cheap/.style={box, fill=white},
-      test/.style={draw=accent, fill=white, diamond, aspect=2.4, align=center, inner sep=1pt},
+      test/.style={draw=accent, fill=white, diamond, aspect=3, align=center, inner sep=0.5pt},
       done/.style={box, draw=teal!60!black, fill=teal!8},
       arr/.style={-{Stealth[length=2.2mm]}, draw=accent, thick},
       lbl/.style={font=\footnotesize, text=black!70}]
@@ -24,12 +24,14 @@ evaluation it makes along the way.
     \node[cheap, left=of r0, minimum width=34mm] (seed) {existing evaluations\\(round 0 skipped)};
     \node[cheap, below=of r0]    (train) {training set};
     \node[cheap, below=of train] (fit)   {\textbf{fit} the surrogate};
-    \node[cheap, below=of fit]   (samp)  {\textbf{sample} it: cheap chain,\\refining depth};
+    \node[cheap, below=of fit]   (samp)  {surrogate-based MCMC\\at \emph{refining} depth (short)};
     \node[box,   below=of samp]  (val)   {\textbf{validate}: $N$ expensive\\evaluations on its posterior};
-    \node[test,  below=of val]   (pass)  {criteria\\met?};
-    \node[box,   below=of pass]  (ver)   {\textbf{verify}: re-sample to reporting\\depth, validate again};
-    \node[test,  below=of ver]   (vpass) {still\\met?};
-    \node[done,  below=of vpass] (out)   {return the posterior};
+    \node[test,  below=of val]   (pass)  {criteria met?};
+    \node[box,   below=6mm of pass] (ver) {\textbf{verify}: surrogate-based MCMC at \emph{reporting}\\depth (long), then validate again};
+    \node[test,  below=of ver]   (vpass) {still met?};
+    \node[done,  below=6mm of vpass] (out) {return the posterior};
+    \node[box, right=22mm of pass, minimum width=34mm] (ref)
+      {\textbf{refine}: the validation\\points join the\\training set};
     \draw[arr] (r0) -- (train);
     \draw[arr] (seed) |- (train);
     \draw[arr] (train) -- (fit);
@@ -39,14 +41,15 @@ evaluation it makes along the way.
     \draw[arr] (pass) -- node[lbl, right] {yes} (ver);
     \draw[arr] (ver) -- (vpass);
     \draw[arr] (vpass) -- node[lbl, right] {yes} (out);
-    \coordinate (back) at ($(train.east)+(22mm,0)$);
-    \draw[arr] (pass.east) -- node[lbl, above, pos=0.35] {no} (pass.east -| back) -- (back) -- (train.east);
-    \draw[arr] (vpass.east) -- node[lbl, above, pos=0.35] {no} (vpass.east -| back) -- (pass.east -| back);
-    \node[lbl, align=left, anchor=west] at ($(back)!0.5!(pass.east -| back) + (1.5mm,0)$)
-      {validation points\\join the\\training set};
+    \draw[arr] (pass.east) -- node[lbl, above, pos=0.2] {no} (ref.west);
+    \draw[arr] (vpass.east) -- node[lbl, above, pos=0.12] {no} (vpass.east -| ref) -- (ref.south);
+    \draw[arr] (ref.north) |- (train.east);
   \end{tikzpicture}
-  \caption{The loop. Shaded boxes spend expensive evaluations, white boxes only cheap ones. Every
-           expensive evaluation, including those of a verification, ends up in the training set.}
+  \caption{The loop. Shaded boxes spend expensive evaluations, white boxes only cheap ones.
+           Validation is made every round on a chain at refining depth, and once more, as the
+           verification, on a chain at reporting depth before a pass is accepted; a failure at
+           either sends the round to \emph{refine}. Every expensive evaluation ends up in the
+           training set.}
   \label{fig:hybrid-loop}
 \end{figure}
 
@@ -57,7 +60,8 @@ evaluation it makes along the way.
         their number is this stage's parallelism. The regularization points are the only
         evaluations in the whole run placed without reference to a posterior, and so the only ones
         that can find mass the surrogate does not already know about.
-  \item \textbf{Fit} a fast surrogate: a Gaussian process by default (\cref{sec:hybrid-surrogates}).
+  \item \textbf{Fit} a fast surrogate: a Gaussian process \citep{rasmussen2006} by default
+        (\cref{sec:hybrid-surrogates}).
   \item \textbf{Sample} the surrogate with a cheap, vectorized MCMC that needs no cluster, confined
         to \code{param_bounds} or, by default, to an envelope grown from the training data
         (\cref{sec:unbounded}). A fresh sampler is built every round, because each round samples a
@@ -78,11 +82,18 @@ evaluation it makes along the way.
         too.
 \end{enumerate}
 
+The names are easily confused. \emph{Validation} is the measurement itself --- expensive
+evaluations on the surrogate posterior, scored against the criteria --- and it happens every round.
+\emph{Verification} is not a different test: it is a second validation of the same surrogate, made
+only after a pass, on a chain sampled more deeply. \emph{Refining} and \emph{verifying} name the two
+depths at which the surrogate is sampled, and the \code{refine_*} and \code{verify_*} arguments set
+them (\cref{sec:two-depths}).
+
 Verification buys two things. The returned posterior is sampled properly, rather than being
 whatever a deliberately cheap chain happened to produce. And the decision to stop rests on two
-independent measurements rather than one --- which matters, because a single measurement from 100
-validation batch is noisy: two batches scored against the \emph{same} surrogate can land on opposite
-sides of the threshold.
+independent measurements rather than one --- which matters, because a single validation batch is a
+noisy measurement: two batches scored against the \emph{same} surrogate can land on opposite sides of
+the threshold.
 
 \begin{keypoint}[Starting from existing evaluations]
 If expensive evaluations already exist --- from an ordinary \code{slurm_mcmc} run, a parameter scan,
@@ -138,14 +149,14 @@ tails.
 \subsection{Weight efficiency}
 
 $\varepsilon$ alone is not safe, for two reasons. First, if the weights collapse onto a few points,
-$\varepsilon$ is computed from those points alone and can be arbitrarily small --- exactly zero for a
-single dominating point --- while the surrogate is in fact terrible. Second, and more commonly, the
+$\varepsilon$ is computed from those points alone, so its value says little --- in the limit of a
+single dominating point it is exactly zero --- while the surrogate is in fact terrible. Second, and more commonly, the
 weighting that makes $\varepsilon$ an average under the expensive posterior also makes it blind to
 surrogate mass where the expensive posterior has none: a validation point with $d_i \ll 0$ gets
 $w_i \approx 0$ and drops out of \cref{eq:epsilon}. A surrogate posterior with a spurious lobe, or
 with tails far too wide, can therefore pass the accuracy test while a large fraction of the samples
 it reports are wrong. Both failures show in how evenly the weights are spread, measured by the
-\emph{weight efficiency} --- the importance-sampling (Kish) efficiency of the $N$ validation points:
+\emph{weight efficiency} --- the importance-sampling efficiency of the $N$ validation points:
 \begin{equation}
   \effw = \frac{\left(\sum_i w_i\right)^2}{N\sum_i w_i^2} \in \left[\tfrac{1}{N},\, 1\right].
   \label{eq:weight-efficiency}
@@ -162,6 +173,78 @@ that it becomes the binding criterion. Its resolution is set by $N$: the scatter
 $0.9$ is about $\sqrt{0.09/N}$, $0.02$ at $N = 200$, which is one reason for the floor of 200 in the
 default \code{num_validation_points}. $\effw$ is printed per round as the \code{w_eff} column of the
 diagnostics (\cref{sec:hybrid-diagnostics}).
+
+\subsection{What each criterion sees}
+\label{sec:criteria-cases}
+
+The two statistics are averages over different distributions. The validation points arrive with
+density $\propto \psur$, and in $\varepsilon$ each carries the weight $\pexp/\psur$; for any quantity
+$f$, the surrogate density cancels between the two:
+\begin{align}
+  \sum_i \tilde w_i\, f(\theta_i)
+  &\;\xrightarrow{\;N\to\infty\;}\;
+  \frac{\int \psur\,(\pexp/\psur)\, f \,d\theta}{\int \psur\,(\pexp/\psur)\,d\theta}
+  = \int \pexp\, f\, d\theta ,
+  \notag\\[6pt]
+  \frac{1}{N}\sum_i f(\theta_i) &\;\xrightarrow{\;N\to\infty\;}\; \int \psur\, f\, d\theta ,
+  \label{eq:criteria-measures}
+\end{align}
+with both densities normalized. $\varepsilon^2$ is therefore the variance of $d$ under the
+\emph{expensive} posterior: a region counts in proportion to how much expensive mass it holds,
+whatever the surrogate puts there. Where $\pexp \approx 0$ an error counts for nothing, even if the
+surrogate places a fifth of its mass there and is wrong by 17 nats. That is intended --- it is what
+makes $\varepsilon$ measure accuracy where the answer lives --- but it is also its blind spot.
+$\effw$, by contrast, divides by the plain count $N$, which follows $\psur$ with nothing divided out:
+\begin{equation}
+  \effw \;\xrightarrow{\;N\to\infty\;}\;
+  \frac{\left(\int \psur\, w \,d\theta\right)^2}{\int \psur\, w^2 \,d\theta} .
+\end{equation}
+If a fraction $s$ of the surrogate's mass sits where $w = 0$ and $w$ is a constant elsewhere, this is
+$1-s$, the junk-fraction bound quoted above. Put together:
+\begin{itemize}
+  \item \textbf{$\varepsilon$ asks:} where the true posterior has mass, does the surrogate get its
+        shape right? It is measured under $\pexp$.
+  \item \textbf{$\effw$ asks:} where the surrogate has mass, is the true posterior there too? It is
+        measured under $\psur$.
+\end{itemize}
+Neither can see where the surrogate has \emph{no} mass and the target does, which is the blind spot
+of the caution box below.
+
+\Cref{fig:criteria-cases} shows the difference on a one-dimensional standard normal target, with
+$N = 200$ validation points drawn from each of four surrogates
+(\code{example_hybrid_criteria_cases.py}).
+\begin{itemize}
+  \item \textbf{Accurate.} $d$ varies by a few hundredths of a nat, every weight sits at $1/N$, and
+        both criteria pass. In this regime they say the same thing, $\effw \approx e^{-\varepsilon^2}$.
+  \item \textbf{Noisy.} The surrogate is in the right place but its shape is off by up to 0.3 nats.
+        $\varepsilon = 0.22$ fails while $\effw = 0.96$ passes: for errors of this kind
+        $\varepsilon$ is the tighter test, and the one that sets the precision of the result.
+  \item \textbf{Spurious lobe.} Around the true peak the surrogate is $0.8\,\pexp$, the second
+        lobe's tail being negligible there, so $d$ is the constant $\log(1/0.8)$ --- no error at
+        all, since only the spread of $d$ counts. It puts the remaining 20\% of its mass in a
+        second lobe, where the target is about 18 nats below its peak. There $d \approx -17$, but the weights are below $10^{-6}$:
+        the lobe vanishes from $\varepsilon$, which passes at 0.008. The lobe's points still count
+        in $N$, and $\effw = 0.80$ fails. Without $\effw$, a fifth of the reported posterior would
+        be wrong.
+  \item \textbf{Misplaced peak.} The surrogate's peak is 3.5 standard deviations off. The few points
+        in its tail nearest the true peak carry the weight, $N\effw = 2$, and both criteria fail.
+        $\varepsilon$ fails for the right reason but is computed from about two points, so its
+        value is a poor estimate; $\effw$ reports the collapse directly. Over many draws of this
+        case $\varepsilon$ fails essentially always, so a collapse that fools $\varepsilon$ needs a
+        single point underestimated by tens of nats --- possible far from the training data, but
+        rare.
+\end{itemize}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{example_hybrid_criteria_cases.png}
+  \caption{Four surrogates of a standard normal target. Upper panel of each: the target (black), the
+           surrogate posterior (blue) and the $N = 200$ validation points drawn from it. Lower panel:
+           the normalized weight $\tilde w_i$ of each point, on a log scale; the points of the
+           spurious lobe lie below the plotted range. The boxes give $\varepsilon$ and $\effw$
+           against the default thresholds, $\varepsilon \le 0.1$ and $\effw \ge 0.9$.}
+  \label{fig:criteria-cases}
+\end{figure}
 
 \subsection{Posterior stability}
 
@@ -307,8 +390,9 @@ Early in a run that is negligible, but every round adds evaluations, so on a lon
 to dominate and eventually stops being affordable at all. \code{DistributedGPSurrogate} is the way
 past that point.
 
-\textbf{What it does.} It is a robust Bayesian Committee Machine (Deisenroth \& Ng 2015, with Cao \&
-Fleet's 2014 weights). It splits the training set among independent Gaussian-process
+\textbf{What it does.} It is a robust Bayesian Committee Machine \citep{deisenroth2015}, a
+development of the Bayesian Committee Machine of \citet{tresp2000}, with the entropy-based expert
+weights of \citet{cao2014}. It splits the training set among independent Gaussian-process
 \emph{experts} and recombines their predictions in closed form. It attacks cost by parallelism
 rather than approximation: the expert fits are independent, so on a cluster the wall clock is that of
 a single expert.
@@ -438,7 +522,7 @@ chain, after discarding the first 20\% as burn-in.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.5\linewidth]{example_mcmc_hybrid_reference_convergence.png}
+  \includegraphics[width=0.8\linewidth]{example_mcmc_hybrid_reference_convergence.png}
   \caption{The reference posterior at five stopping points along the chain, with $\Lc/\tau$ and
            the effective sample size for each in the legend. The figures label the effective sample
            size ESS/$\tau$, for the number of samples divided by $\tau$; $\tau$ is the largest over
@@ -488,17 +572,6 @@ triggered the verification, and $n$v for the verification chain that then judged
 counts the expensive evaluations accumulated before the round, and $n_{\mathrm{train}}$ those that
 entered the fit; the two rows share one fit, so both are given on the first row only.
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.8\linewidth]{example_mcmc_hybrid_convergence.png}
-  \caption{Top: the criteria, surrogate accuracy $\varepsilon$ and weight efficiency $\effw$, with
-           the region a converged run must stay out of shaded. The posterior shift is not tested in
-           this run, so it has no panel. Bottom: how deeply the surrogate chain was sampled,
-           $\Lc/\tau$ and ESS against their floors. Green squares are verification chains, blue
-           circles refinement chains.}
-  \label{fig:hybrid-convergence}
-\end{figure}
-
 \begin{center}
 \small
 \begin{tabular}{@{}lrrrrrrrr@{}}
@@ -515,11 +588,22 @@ entered the fit; the two rows share one fit, so both are given on the first row 
 \end{tabular}
 \end{center}
 
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{example_mcmc_hybrid_convergence.png}
+  \caption{Top: the criteria, surrogate accuracy $\varepsilon$ and weight efficiency $\effw$, with
+           the region a converged run must stay out of shaded. The posterior shift is not tested in
+           this run, so it has no panel. Bottom: how deeply the surrogate chain was sampled,
+           $\Lc/\tau$ and ESS against their floors. Green squares are verification chains, blue
+           circles refinement chains.}
+  \label{fig:hybrid-convergence}
+\end{figure}
+
 \subsection{The posterior, round by round}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.82\linewidth]{example_mcmc_hybrid_hybrid_posterior_per_round.png}
+  \includegraphics[width=0.9\linewidth]{example_mcmc_hybrid_hybrid_posterior_per_round.png}
   \caption{Each round's posterior as the pipeline left it --- for a verified round, the verification
            chain's --- one colour per round, with the expensive reference dashed in black.}
   \label{fig:hybrid-rounds}
@@ -539,7 +623,7 @@ behind the figure are kept in \code{work_dir/posteriors/posterior_round{k}.npy} 
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.96\linewidth]{example_mcmc_hybrid_log_prob_maps.png}
+  \includegraphics[width=\linewidth]{example_mcmc_hybrid_log_prob_maps.png}
   \caption{The expensive log-probability in each parameter pair, with the remaining parameter held at
            the optimum, and 200 draws each from the hybrid posterior (red) and the reference (light
            blue). The colour scale is in nats, clipped 200 below the peak.}
@@ -556,7 +640,7 @@ they stop near $x_1 \approx 1.9$, where the reference continues to about 2.9.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.82\linewidth]{example_mcmc_hybrid_posterior.png}
+  \includegraphics[width=0.9\linewidth]{example_mcmc_hybrid_posterior.png}
   \caption{The hybrid posterior (black) against the expensive reference (blue).}
 \end{figure}
 

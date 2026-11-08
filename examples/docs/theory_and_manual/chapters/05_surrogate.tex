@@ -33,7 +33,7 @@ proceeds in five steps:
 
 The surrogate posterior $\psur$ can be checked directly against the expensive one, $\pexp$. Draw
 points $\theta_i$ from the surrogate-based MCMC samples, evaluate the expensive function there, and
-form the ratios
+form the importance-sampling ratios
 \begin{equation}
   w_i = \frac{\pexp(\theta_i)}{\psur(\theta_i)} = \exp\!\big(\log\pexp(\theta_i) - \log\psur(\theta_i)\big),
   \label{eq:importance-weights}
@@ -67,7 +67,7 @@ The MCMC is then rerun, with the same settings, on the surrogate:
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.5\linewidth]{example_mcmc_surrogate_parameters_distribution.png}
+  \includegraphics[width=0.56\linewidth]{example_mcmc_surrogate_parameters_distribution.png}
   \caption{The posterior from the expensive MCMC and from the surrogate-based MCMC, after burn-in.
            They are similar, but not identical.}
 \end{figure}
@@ -77,7 +77,7 @@ expensive function:
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.42\linewidth]{example_mcmc_surrogate_importance_weights.png}
+  \includegraphics[width=0.65\linewidth]{example_mcmc_surrogate_importance_weights.png}
   \caption{The ratio of expensive to surrogate probabilities, the importance weights of
            \cref{eq:importance-weights}, on 1000 surrogate-posterior points.}
 \end{figure}

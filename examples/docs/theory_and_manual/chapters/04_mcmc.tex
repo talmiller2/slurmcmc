@@ -7,14 +7,54 @@ The goal of Bayesian calibration is the posterior $p(\theta \mid y)$ of \cref{eq
 one best point, but the full distribution of parameters consistent with the data: their means,
 widths, correlations, and credible intervals. In more than a few dimensions a grid over parameter
 space is hopeless, because its size grows exponentially with $d$. Markov chain Monte Carlo (MCMC)
-instead builds a random walk whose steps are accepted or rejected so that, in the long run, the
-points it visits are distributed according to $p$. Histograms of those points then estimate the
-posterior, and averages over them estimate posterior expectations. Crucially, a step only ever
-compares $p$ at two points, so the unknown normalizing constant cancels.
+has a more modest goal: to produce a sequence of points $\theta^{(1)}, \dots, \theta^{(L)}$ that are
+distributed according to $p$. Histograms of those points then estimate the posterior, and averages
+over them estimate posterior expectations,
+\begin{equation}
+  \mathbb{E}_p[f] = \int f(\theta)\, p(\theta)\, d\theta \;\approx\; \frac{1}{L}\sum_{t=1}^{L} f\big(\theta^{(t)}\big),
+\end{equation}
+for any quantity $f$ --- a mean, a variance, the probability of a region. \Citet{hogg2018} is a
+practical introduction, with advice on initialization and convergence that applies directly here.
+
+\section{The Metropolis algorithm}
+
+The original algorithm \citep{metropolis1953,hastings1970} reaches that goal with a random walk.
+From the current point $\theta$:
+\begin{enumerate}[leftmargin=*, label=\arabic*.]
+  \item \textbf{Propose} a step, $\theta' = \theta + \delta$, with $\delta$ drawn from a symmetric
+        distribution, typically a Gaussian of width $\sigma$.
+  \item \textbf{Accept} it with probability
+        \begin{equation}
+          \alpha(\theta \to \theta') = \min\!\left(1,\; \frac{p(\theta')}{p(\theta)}\right):
+          \label{eq:metropolis}
+        \end{equation}
+        a step uphill in probability is always taken, a step downhill only sometimes.
+  \item If the step is accepted the next point is $\theta'$; if not, the chain stays and $\theta$ is
+        recorded \emph{again}.
+\end{enumerate}
+This rule satisfies \emph{detailed balance}: in equilibrium, the flow from $\theta$ to $\theta'$,
+$p(\theta)\,\alpha(\theta\to\theta')$, equals the flow back, $p(\theta')\,\alpha(\theta'\to\theta)$.
+So $p$ is left unchanged by a step, and a chain started anywhere converges to it. Two properties
+make the algorithm practical. Only the ratio $p(\theta')/p(\theta)$ enters, so the unknown
+normalizing constant left out of \cref{eq:bayes} cancels and the unnormalized posterior suffices.
+And the rejected steps are not wasted: the repeated points are what make the chain spend the right
+amount of time in each region. \Citet{hastings1970} extended the rule to asymmetric proposals by
+multiplying the ratio in \cref{eq:metropolis} by the ratio of the proposal densities,
+$q(\theta \mid \theta')/q(\theta' \mid \theta)$.
+
+The weak point is the proposal. The width $\sigma$ must be tuned by hand: too small, and the chain
+crawls through a long random walk of accepted but tiny steps; too large, and nearly every step is
+rejected. When the posterior is elongated or correlated, a single $\sigma$ has to fit its narrowest
+direction, and the chain then takes very many steps to cross the wide one. And one chain is
+inherently sequential: each step needs the result of the previous one. Later algorithms keep the
+accept/reject construction and improve the proposal --- adapting it to the samples seen so far,
+using gradients of $p$ (Hamiltonian Monte Carlo), or, as below, building it from an ensemble of
+chains --- to mix faster and, in the last case, to run in parallel.
 
 \section{The affine-invariant ensemble sampler}
 
-slurmcmc uses the ensemble sampler of \texttt{emcee}. Instead of one chain it advances an ensemble
+slurmcmc uses the ensemble sampler of \texttt{emcee} \citep{foreman2013}, an implementation of
+the affine-invariant sampler of \citet{goodman2010}. Instead of one chain it advances an ensemble
 of $\Nc$ \textbf{walkers} --- $\Nc$ parallel MCMC chains, whose starting points are
 \code{init_points}. A walker $\theta_k$ moves by the \emph{stretch move}: pick another walker
 $\theta_j$ and propose a point on the line through both,
@@ -24,8 +64,10 @@ $\theta_j$ and propose a point on the line through both,
 \end{equation}
 with $a = 2$, and accept it with probability
 \begin{equation}
-  \min\!\left(1,\; z^{\,d-1}\,\frac{p(\theta')}{p(\theta_k)}\right).
+  \min\!\left(1,\; z^{\,d-1}\,\frac{p(\theta')}{p(\theta_k)}\right),
 \end{equation}
+the Metropolis rule of \cref{eq:metropolis} with a factor $z^{d-1}$ that corrects for the
+asymmetry of the stretch.
 Because proposals are built from the positions of the other walkers, the sampler adapts
 automatically to the scale and orientation of the posterior: it is invariant under any linear
 transformation of the parameters, so strongly correlated, elongated posteriors are sampled as
@@ -49,18 +91,89 @@ documentation}.
 
 \subsection{Integrated autocorrelation time}
 
-For a parameter with normalized autocorrelation function $\rho(t)$ along the chain, the integrated
+\textbf{Definition.} Follow one parameter along one walker's chain, $x_1, x_2, \dots, x_{\Lc}$, once
+it has settled into the posterior, where it has mean $\mu$ and variance $\sigma^2$. Its
+autocovariance at lag $t$ and normalized autocorrelation function are
+\begin{equation}
+  C(t) = \mathbb{E}\big[(x_s - \mu)(x_{s+t} - \mu)\big],
+  \qquad
+  \rho(t) = \frac{C(t)}{C(0)} ,
+\end{equation}
+so $\rho(0) = 1$ and $\rho(t) \to 0$ as the chain forgets where it was. The \emph{integrated}
 autocorrelation time is
 \begin{equation}
-  \tau = \sum_{t=-\infty}^{\infty} \rho(t) = 1 + 2 \sum_{t=1}^{\infty} \rho(t),
+  \tau = \sum_{t=-\infty}^{\infty} \rho(t) = 1 + 2 \sum_{t=1}^{\infty} \rho(t) .
+  \label{eq:tau}
 \end{equation}
-roughly the number of iterations between effectively independent samples. It is computed per
-parameter, using all walkers together to reduce the noise of the estimate. The estimate itself is
-only trustworthy when the chain is much longer than $\tau$:
+
+\textbf{Why this sum.} It is the quantity that sets the error of anything computed from the chain.
+The variance of the chain average $\bar x = \frac{1}{\Lc}\sum_s x_s$ is a double sum over pairs of
+iterations, and each pair at lag $t$ contributes $\sigma^2\rho(t)$:
+\begin{equation}
+  \mathrm{Var}(\bar x)
+  = \frac{\sigma^2}{\Lc} \sum_{t=-(\Lc-1)}^{\Lc-1} \left(1 - \frac{|t|}{\Lc}\right) \rho(t)
+  \;\xrightarrow{\;\Lc \gg \tau\;}\; \frac{\sigma^2}{\Lc/\tau} .
+  \label{eq:var-mean}
+\end{equation}
+Independent draws would give $\sigma^2/\Lc$, so $\Lc$ correlated iterations are worth $\Lc/\tau$
+independent ones: $\tau$ is the number of iterations per effectively independent sample, which is
+the effective sample size of \cref{eq:ess}. For a chain whose correlations decay exponentially,
+$\rho(t) = e^{-|t|/t_0}$, \cref{eq:tau} sums to $\tau = \coth(1/2t_0) \approx 2t_0$: the
+integrated time is about twice the decay time, because correlations count in both directions.
+
+\textbf{How \texttt{emcee} estimates it.} slurmcmc does not estimate $\tau$ itself; it calls
+\texttt{emcee}'s \code{integrated_time}, through \code{sampler.get_autocorr_time} in
+\code{slurm_mcmc} and directly in the hybrid pipeline. For each parameter separately, it
+\begin{enumerate}[label=\arabic*.]
+  \item estimates the autocorrelation function of each walker $k$ from its own chain, with the
+        walker's own mean $\bar x_k$:
+        \begin{equation}
+          \hat\rho_k(t) = \frac{\sum_{s=1}^{\Lc-t} (x_{k,s} - \bar x_k)(x_{k,s+t} - \bar x_k)}
+                               {\sum_{s=1}^{\Lc} (x_{k,s} - \bar x_k)^2} ,
+        \end{equation}
+        for all lags at once with a fast Fourier transform, zero-padded so that the chain does not
+        wrap around onto itself, in $O(\Lc \log \Lc)$ operations;
+  \item averages over the walkers, $\hat\rho(t) = \frac{1}{\Nc}\sum_k \hat\rho_k(t)$, which is how
+        all walkers are used together to reduce the noise;
+  \item sums it up to a window $M$, $\hat\tau(M) = 1 + 2\sum_{t=1}^{M} \hat\rho(t)$, rather than to
+        the end of the chain;
+  \item chooses the window self-consistently \citep{sokal1997}: the smallest $M$ with
+        \begin{equation}
+          M \ge c\,\hat\tau(M), \qquad c = 5,
+          \label{eq:window}
+        \end{equation}
+        and reports $\hat\tau = \hat\tau(M)$;
+  \item checks that the chain is long enough to trust the result, $\Lc \ge 50\,\hat\tau$
+        (\cref{eq:lc-tau}). If not, it raises an error, or with \code{quiet=True} only logs a
+        warning.
+\end{enumerate}
+The result is one $\tau$ per parameter. slurmcmc applies its own floors to the largest of them,
+after the burn-in has been discarded.
+
+\textbf{Why a window.} Summing $\hat\rho$ to the end of the chain does not work. Beyond a few $\tau$
+the true $\rho(t)$ is essentially zero, but every $\hat\rho(t)$ still carries noise of order
+$1/\sqrt{\Lc}$, and the sum of hundreds of such terms swamps the signal. Cutting the sum at $M$
+trades two errors \citep{sokal1997}. Too small a window misses the tail, a bias of
+$-2\sum_{t>M}\rho(t)$; for exponential decay, at $M = 5\tau \approx 10\,t_0$, that is of order
+$e^{-10}$, negligible. Too large a window adds noise, with variance
+\begin{equation}
+  \frac{\mathrm{Var}(\hat\tau)}{\tau^2} \approx \frac{2(2M+1)}{\Lc}
+  \;\approx\; \frac{4c}{\Nc\,(\Lc/\tau)} ,
+  \label{eq:tau-variance}
+\end{equation}
+where the second form puts in $M = c\tau$ and divides by the $\Nc$ walkers averaged over, as if
+they were independent; walkers of an ensemble are not quite, so this is optimistic. At the
+$\Lc = 50\,\tau$ of \cref{eq:lc-tau}, it gives a relative error of about 20\% on $\tau$ with 10
+walkers and 6\% with 100. $c = 5$ is the usual compromise for correlations that decay roughly
+exponentially; slowly decaying ones need a larger $c$.
+
+The estimate is only trustworthy when the chain is much longer than $\tau$:
 \begin{equation}
   \Lc \ge 50\,\tau .
   \label{eq:lc-tau}
 \end{equation}
+The window alone needs $\Lc > 5\,\tau$ before \cref{eq:window} can be satisfied at all; the
+factor of 50 is \texttt{emcee}'s rule for an estimate good enough to report \citep{foreman2013}.
 
 \begin{cautionbox}[$\tau$ grows before it settles]
 The estimated $\tau$ usually \emph{increases} with $\Lc$ until it saturates, because a short chain
@@ -84,7 +197,7 @@ which is why both criteria are needed.
 
 \begin{itemize}
   \item \textbf{Gelman--Rubin statistic.} The ratio of between-chain to within-chain variance,
-        $\hat R$, approaches 1 at convergence. Walkers of an ensemble sampler are correlated by
+        $\hat R$, approaches 1 at convergence \citep{gelman1992}. Walkers of an ensemble sampler are correlated by
         construction, so it is only a supplementary diagnostic here.
   \item \textbf{Stopping points.} Plot the posterior as it would have been had the chain stopped at
         several points along the way. Agreement between the last few is necessary, though not
@@ -157,7 +270,7 @@ higher dimension, the starting points should instead come from an optimization.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.78\linewidth]{example_mcmc_chains_progress.png}
+  \includegraphics[width=\linewidth]{example_mcmc_chains_progress.png}
   \caption{The walkers' positions per iteration, after burn-in.}
 \end{figure}
 
@@ -171,7 +284,7 @@ higher dimension, the starting points should instead come from an optimization.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.72\linewidth]{example_mcmc_2d_visualization.png}
+  \includegraphics[width=0.78\linewidth]{example_mcmc_2d_visualization.png}
   \caption{The log-probability (logarithm of its absolute value), with every point the walkers
            proposed (black) and the points accepted into the chains (red).}
 \end{figure}
@@ -190,13 +303,13 @@ plot of the posterior, and its stability along the chain:
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.62\linewidth]{example_mcmc_parameters_distribution.png}
+  \includegraphics[width=0.66\linewidth]{example_mcmc_parameters_distribution.png}
   \caption{The posterior: one- and two-dimensional marginals.}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.62\linewidth]{example_mcmc_parameters_distribution_convergence.png}
+  \includegraphics[width=0.66\linewidth]{example_mcmc_parameters_distribution_convergence.png}
   \caption{The posterior as it would have been had the chains been stopped at five points along
            the run, from purple (earliest) to red (the full chain).}
 \end{figure}
@@ -210,13 +323,13 @@ close to the known minimum.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.68\linewidth]{example_mcmc_5d_parameters_distribution_convergence.png}
+  \includegraphics[width=0.72\linewidth]{example_mcmc_5d_parameters_distribution_convergence.png}
   \caption{The 5D posterior at five stopping points along the chains, without burn-in.}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.62\linewidth]{example_mcmc_5d_convergence_diagnostics.png}
+  \includegraphics[width=0.85\linewidth]{example_mcmc_5d_convergence_diagnostics.png}
   \caption{Convergence diagnostics of the 5D run, as in \cref{sec:mcmc-convergence}.}
 \end{figure}
 
@@ -224,7 +337,7 @@ The same posterior is then computed by brute force, evaluating the density on a 
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.7\linewidth]{example_mcmc_and_mc_5d_parameters_distribution.png}
+  \includegraphics[width=0.8\linewidth]{example_mcmc_and_mc_5d_parameters_distribution.png}
   \caption{The 5D posterior from MCMC (black) and from grid Monte Carlo (blue), and from a
            coarser grid with about as many samples as the MCMC (red). The legend gives the total
            number of samples and the computation time of each.}

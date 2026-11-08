@@ -65,9 +65,9 @@ slurmcmc stitches together established libraries rather than re-implementing the
   \href{https://github.com/facebookresearch/nevergrad}{\texttt{nevergrad}} &
     gradient-free population optimizers: Differential Evolution, Particle Swarm, and others \\
   \href{https://github.com/pytorch/botorch}{\texttt{botorch}} &
-    Bayesian optimization with a Gaussian-process model \\
+    Bayesian optimization with a Gaussian-process model \citep{balandat2020} \\
   \href{https://github.com/dfm/emcee}{\texttt{emcee}} &
-    the affine-invariant ensemble MCMC sampler \\
+    the affine-invariant ensemble MCMC sampler \citep{foreman2013} \\
   \href{https://scikit-learn.org}{\texttt{scikit-learn}} &
     the Gaussian-process and polynomial surrogate models of the hybrid pipeline \\
   \bottomrule
@@ -131,6 +131,7 @@ a real problem.
   \code{example_mcmc_and_mc_comparison.py}         & \cref{sec:mcmc-vs-mc} \\
   \code{example_mcmc_surrogate.py}                 & \cref{sec:surrogate-example} \\
   \code{example_mcmc_hybrid.py}                    & \cref{sec:hybrid-example} \\
+  \code{example_hybrid_criteria_cases.py}          & \cref{sec:criteria-cases} \\
   \bottomrule
 \end{tabularx}
 \end{center}

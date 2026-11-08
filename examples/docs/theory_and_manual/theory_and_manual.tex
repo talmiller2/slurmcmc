@@ -31,7 +31,7 @@
 \definecolor{codebg}{RGB}{247,248,250}
 \definecolor{inlinecodebg}{RGB}{232,235,239}
 \usepackage[most]{tcolorbox}
-\usetikzlibrary{positioning,arrows.meta,shapes.geometric,calc}
+\usetikzlibrary{positioning,arrows.meta,shapes.geometric,calc,fit,backgrounds}
 \newtcolorbox{keypoint}[1][Key point]{enhanced, breakable, colback=accentsoft, colframe=accent,
   boxrule=0pt, leftrule=3pt, arc=0pt, outer arc=0pt, left=9pt, right=9pt, top=6pt, bottom=6pt,
   fonttitle=\bfseries\small, coltitle=accent, colbacktitle=accentsoft, titlerule=0pt,
@@ -97,6 +97,8 @@
 
 \usepackage{enumitem}
 \setlist{itemsep=2pt, topsep=4pt}
+\usepackage[round,authoryear]{natbib}
+\renewcommand{\bibname}{Bibliography}
 \usepackage[colorlinks=true, linkcolor=accent, urlcolor=accent, citecolor=accent,
             pdftitle={slurmcmc: theory and user manual}]{hyperref}
 \usepackage[capitalise,noabbrev]{cleveref}
@@ -137,5 +139,6 @@
 
 \appendix
 \input{chapters/07_appendix}
+\input{chapters/08_bibliography}
 
 \end{document}
